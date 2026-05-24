@@ -1,0 +1,3 @@
+~/.walkaway-cli/
+*.log
+*.pid
