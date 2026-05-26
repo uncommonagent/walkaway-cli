@@ -72,22 +72,9 @@ _watcher_loop() {
         failure-report-*)
           _watcher_notify "Build STOPPED" "$filename — check the failure report." "urgent"
           ;;
-        phase-*-report*.md)
-          local phase feat2
-          phase=$(echo "$filename" | grep -oE 'phase-[0-9]+' | head -1)
-          feat2=$(echo "$filename" | sed -E 's/^phase-[0-9]+-report-(.+)\.md$/\1/')
-          _watcher_notify "$feat2: $phase done" "Phase committed. Build continuing." "min"
-          ;;
-        codex-review-*.md)
-          local feat3
-          feat3=$(echo "$filename" | sed -E 's/^codex-review-(.+)\.md$/\1/')
-          _watcher_notify "$feat3: Codex review done" "Check for findings." "default"
-          ;;
-        smoke-test-*.md|smoke-results-*.md)
-          local feat4
-          feat4=$(echo "$filename" | sed -E 's/^smoke-(test|results)-(.+)\.md$/\2/')
-          _watcher_notify "$feat4: smoke done" "$filename written." "default"
-          ;;
+        # phase-*-report*.md, codex-review-*.md, smoke-*.md no longer notify
+        # (too noisy: 8+ notifications per build). Build report alone is enough.
+        # Open Claude chat and say "status" for any details.
       esac
 
       # Update state
