@@ -59,28 +59,32 @@ _watcher_loop() {
         continue
       fi
 
+      local fired=0
       case "$filename" in
-        build-report-CURRENT.md)
-          _watcher_notify "Build complete" "Build report ready. Open Claude chat and say 'status'." "high"
+        "build-report-${feature}.md")
+          _watcher_notify "Build complete: $feature" "Build report ready. Say 'status $feature'." "high"
+          fired=1
           ;;
-        build-report-*.md)
-          local feat
-          feat=$(echo "$filename" | sed 's/^build-report-//; s/\.md$//')
-          [[ "$feat" != "CURRENT" ]] && \
-            _watcher_notify "Build complete: $feat" "Build report ready. Say 'status $feat'." "high"
+        failure-report-*"${feature}"*)
+          _watcher_notify "Build STOPPED: $feature" "$filename — check the failure report." "urgent"
+          fired=1
           ;;
-        failure-report-*)
-          _watcher_notify "Build STOPPED" "$filename — check the failure report." "urgent"
-          ;;
-        # phase-*-report*.md, codex-review-*.md, smoke-*.md no longer notify
-        # (too noisy: 8+ notifications per build). Build report alone is enough.
-        # Open Claude chat and say "status" for any details.
+        # Everything else (build-report-CURRENT.md, other features' reports,
+        # phase/codex/smoke files) is marked seen silently. Each watcher fires
+        # exactly ONCE for its own feature, then exits — so watchers never
+        # accumulate and never cross-fire on another build's shared files.
       esac
 
       # Update state
       grep -v "^${filename}	" "$state_file" > "${state_file}.tmp" 2>/dev/null || true
       printf '%s\t%s\n' "$filename" "$mtime" >> "${state_file}.tmp"
       mv "${state_file}.tmp" "$state_file"
+
+      # Self-terminate after firing for this feature: one build, one ping, done.
+      if [[ "$fired" -eq 1 ]]; then
+        rm -f "${WALKAWAY_STATE_DIR}/watcher-${feature}.json" "$state_file" 2>/dev/null || true
+        exit 0
+      fi
     done
     sleep 15
   done
