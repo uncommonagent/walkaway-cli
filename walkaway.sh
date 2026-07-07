@@ -111,7 +111,12 @@ if [[ "$FORCE" != "true" ]] && watcher_running "$FEATURE_NAME"; then
 fi
 
 # ── branch setup ─────────────────────────────────────────────────────────────
-if [[ "$DRY_RUN" != "true" ]]; then
+# In worktree mode, skip: worktree_create handles branch creation with -b.
+# Creating/checking out the branch here first makes worktree add fail with
+# "already used by worktree at <source repo>" (bug hit 2026-07-07).
+if [[ "$USE_WORKTREE" == "true" ]]; then
+  :
+elif [[ "$DRY_RUN" != "true" ]]; then
   if ! git -C "$REPO_PATH" show-ref --verify --quiet "refs/heads/$BRANCH_NAME" 2>/dev/null; then
     echo "Creating branch $BRANCH_NAME in $REPO_PATH ..."
     git -C "$REPO_PATH" checkout -b "$BRANCH_NAME"
