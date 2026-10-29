@@ -119,6 +119,18 @@ if [[ "$USE_WORKTREE" == "true" ]]; then
 elif [[ "$DRY_RUN" != "true" ]]; then
   if ! git -C "$REPO_PATH" show-ref --verify --quiet "refs/heads/$BRANCH_NAME" 2>/dev/null; then
     echo "Creating branch $BRANCH_NAME in $REPO_PATH ..."
+    # Base freshness guard (2026-10-29: a launch cut its branch from a 3-day-old commit). Branch from the
+    # freshly fetched default branch, never from whatever HEAD happens to be.
+    git -C "$REPO_PATH" fetch -q origin
+    DEFAULT_BRANCH=$(git -C "$REPO_PATH" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null | sed 's#^origin/##')
+    DEFAULT_BRANCH=${DEFAULT_BRANCH:-main}
+    local_head=$(git -C "$REPO_PATH" rev-parse HEAD)
+    remote_head=$(git -C "$REPO_PATH" rev-parse "origin/$DEFAULT_BRANCH")
+    if [[ "$local_head" != "$remote_head" ]] && ! git -C "$REPO_PATH" merge-base --is-ancestor "origin/$DEFAULT_BRANCH" HEAD; then
+      echo "Base guard: HEAD ($local_head) is not origin/$DEFAULT_BRANCH ($remote_head) or ahead of it." >&2
+      echo "Commit/push the plan on $DEFAULT_BRANCH and pull before launching. Aborted." >&2
+      exit 1
+    fi
     git -C "$REPO_PATH" checkout -b "$BRANCH_NAME"
   else
     # Branch exists — ask before switching
