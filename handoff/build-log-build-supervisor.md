@@ -4,3 +4,4 @@
 - Phase 3 operator (resume/triage/gate/post-merge/escalate) + operator-prompt.md + queue: shellcheck 0, parse tests 7/7 (Phase 2 sha b2543f5)
 - Phase 4 launchd installer + adoption backfill + watcher suppression: shellcheck 0, parse tests 7/7, sandbox adopt 2/2 live builds (Phase 3 sha 7942f50)
 - Phase 4 gate fix: SC2045 in adopt.sh (shellcheck slipped into 493d0ba) fixed, shellcheck 0
+- Phase 5 tests: states 12/12 (all 7 states), operator 28/28, parse 7/7, shellcheck 0; fixed relaunch pipe hang + jq false-alternative bug (Phase 4 sha f236b85)

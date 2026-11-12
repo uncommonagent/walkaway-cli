@@ -28,6 +28,7 @@ WALKAWAY_OPERATOR_PROMPT="${WALKAWAY_OPERATOR_PROMPT:-${OP_DIR}/../templates/ope
 WALKAWAY_OPERATOR_TIMEOUT="${WALKAWAY_OPERATOR_TIMEOUT:-2400}"
 WALKAWAY_PROTOCOL_PATH="${WALKAWAY_PROTOCOL_PATH:-$HOME/Projects/BPO/bpo-comp-tool/handoff/WALKAWAY_BUILD_PROTOCOL.md}"
 WALKAWAY_MERGE_CHECK_WAIT="${WALKAWAY_MERGE_CHECK_WAIT:-900}"
+WALKAWAY_LAUNCH_LOG_DIR="${WALKAWAY_LAUNCH_LOG_DIR:-/tmp}"
 RESUME_CAP=2
 REJECTION_CAP=2
 APPROVAL_CAP=3
@@ -100,8 +101,8 @@ _relaunch() {
   local plan repo prev log args=(--force)
   plan=$(_reg .plan); repo=$(_reg .repo_root); prev=$(_reg .launch_count)
   [[ "$(_reg .worktree)" == "true" ]] && args+=(--worktree)
-  log="/tmp/walkaway-${FEATURE}-auto-$((prev + 1)).log"
-  (cd "$repo" && nohup bash "$WALKAWAY_SH" "${args[@]}" "$plan" > "$log" 2>&1 < /dev/null &)
+  log="${WALKAWAY_LAUNCH_LOG_DIR}/walkaway-${FEATURE}-auto-$((prev + 1)).log"
+  (cd "$repo" || exit 1; nohup bash "$WALKAWAY_SH" "${args[@]}" "$plan" > "$log" 2>&1 < /dev/null &)
   for _ in $(seq 1 60); do
     [[ "$(_reg .launch_count)" -gt "$prev" ]] && { _reg .builder_pid; return 0; }
     sleep 1
@@ -178,7 +179,7 @@ op_resume() {
   if newpid=$(_relaunch); then
     registry_update "$FEATURE" '.last_action = $a' --arg a "auto-resume $n/$RESUME_CAP relaunched (builder pid $newpid)"
   else
-    op_escalate "Auto-resume relaunch failed for $FEATURE (see /tmp/walkaway-${FEATURE}-auto-*.log). Relaunch manually?"
+    op_escalate "Auto-resume relaunch failed for $FEATURE (see ${WALKAWAY_LAUNCH_LOG_DIR}/walkaway-${FEATURE}-auto-*.log). Relaunch manually?"
   fi
 }
 
@@ -229,7 +230,7 @@ operating standard: approve (write the approving directive) or escalate (one que
   decision=$(_ask "$task" "$TRIAGE_SCHEMA")
 
   local d protected in_scope directive question rationale
-  d=$(jq -r '.decision // ""' <<< "$decision"); protected=$(jq -r '.protected_hit // true' <<< "$decision")
+  d=$(jq -r '.decision // ""' <<< "$decision"); protected=$(jq -r 'if (.protected_hit | type) == "boolean" then .protected_hit else true end' <<< "$decision")
   in_scope=$(jq -r '.in_scope // false' <<< "$decision"); directive=$(jq -r '.directive // ""' <<< "$decision")
   question=$(jq -r '.question // ""' <<< "$decision"); rationale=$(jq -r '.rationale // ""' <<< "$decision")
 
@@ -263,7 +264,7 @@ $directive"
   if newpid=$(_relaunch); then
     registry_update "$FEATURE" '.last_action = $a' --arg a "approved fix $n, relaunched (builder pid $newpid)"
   else
-    op_escalate "Relaunch after approved fix failed for $FEATURE (see /tmp/walkaway-${FEATURE}-auto-*.log). Relaunch manually?"
+    op_escalate "Relaunch after approved fix failed for $FEATURE (see ${WALKAWAY_LAUNCH_LOG_DIR}/walkaway-${FEATURE}-auto-*.log). Relaunch manually?"
   fi
 }
 
@@ -310,6 +311,7 @@ op_gate() {
 
 $(_context_block)
 PR: #$pr (gh pr view $pr)
+Supervisor-observed PR state + checks (gh pr view --json): $(supervisor_pr_json "$(_reg .repo)" "$(_reg .branch)" | jq -c '{number,state,mergeStateStatus,statusCheckRollup}')
 Build report: $(_reg .repo)/handoff/build-report-${FEATURE}.md
 
 Verify every acceptance criterion in the plan against the ARCHIVED evidence yourself, per your operating
@@ -412,10 +414,10 @@ _launch_next() {
   git -C "$root" checkout -q "$default" 2>/dev/null && git -C "$root" pull -q --ff-only origin "$default" 2>/dev/null || true
   local nfeature log
   nfeature=$(bash "${OP_DIR}/parse-plan.sh" "$next" 2>/dev/null | sed -n 's/^FEATURE_NAME=//p')
-  log="/tmp/walkaway-${nfeature:-next}.log"
+  log="${WALKAWAY_LAUNCH_LOG_DIR}/walkaway-${nfeature:-next}.log"
   local t0
   t0=$(date +%s)
-  (cd "$root" && nohup bash "$WALKAWAY_SH" "$next" > "$log" 2>&1 < /dev/null &)
+  (cd "$root" || exit 1; nohup bash "$WALKAWAY_SH" "$next" > "$log" 2>&1 < /dev/null &)
   _launched_since() { registry_exists "$nfeature" && (( $(registry_get "$nfeature" .launched_epoch) >= t0 )); }
   for _ in $(seq 1 60); do _launched_since && break; sleep 1; done
   if _launched_since; then

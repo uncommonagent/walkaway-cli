@@ -119,7 +119,7 @@ supervisor_classify() {
     # pending CI or no PR yet: fall through to liveness
   fi
 
-  if ! pid_alive "$pid" "$started"; then printf 'DIED\tbuilder pid %s gone, no new report\n' "$pid"; return 0; fi
+  if ! pid_alive "$pid" "$started"; then printf 'DIED\tbuilder pid %s gone (or recycled), no new report\n' "$pid"; return 0; fi
 
   local act now idle
   act=$(supervisor_activity "$repo" "$branch"); now=$(date +%s)

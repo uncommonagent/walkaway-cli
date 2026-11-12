@@ -4,13 +4,16 @@
 #   ./install-supervisor.sh              install + load, adopt running builds, first tick
 #   ./install-supervisor.sh --uninstall  unload + remove (watchers resume their own ntfy pings)
 #
+# Drills: WALKAWAY_SUPERVISOR_LABEL, WALKAWAY_HOME, WALKAWAY_LAUNCH_LOG_GLOB and WALKAWAY_EXTRA_ENV_XML
+# (<key>/<string> pairs for the agent's environment) point a second agent at a scratch world.
+#
 # While installed, ~/.walkaway-cli/supervisor.enabled exists and watchers stop sending their own pings:
 # the supervisor sends exactly one ntfy per state change instead.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-LABEL="com.jimross.walkaway-supervisor"
+LABEL="${WALKAWAY_SUPERVISOR_LABEL:-com.jimross.walkaway-supervisor}"
 WALKAWAY_HOME="${WALKAWAY_HOME:-$HOME/.walkaway-cli}"
 PLIST="${HOME}/Library/LaunchAgents/${LABEL}.plist"
 DOMAIN="gui/$(id -u)"
@@ -43,7 +46,7 @@ cat > "$PLIST" <<EOF
   <dict>
     <key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:${HOME}/.local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
     <key>WALKAWAY_HOME</key><string>${WALKAWAY_HOME}</string>
-  </dict>
+${WALKAWAY_EXTRA_ENV_XML:-}  </dict>
   <key>StandardOutPath</key><string>${WALKAWAY_HOME}/logs/supervisor.log</string>
   <key>StandardErrorPath</key><string>${WALKAWAY_HOME}/logs/supervisor.log</string>
 </dict>
@@ -52,7 +55,7 @@ EOF
 plutil -lint "$PLIST"
 
 # Adopt builds launched before the registry existed, before the first tick classifies anything.
-WALKAWAY_HOME="$WALKAWAY_HOME" bash "${SCRIPT_DIR}/lib/adopt.sh"
+WALKAWAY_HOME="$WALKAWAY_HOME" bash "${SCRIPT_DIR}/lib/adopt.sh" "${WALKAWAY_LAUNCH_LOG_GLOB:-/tmp/walkaway-*.log}"
 
 touch "${WALKAWAY_HOME}/supervisor.enabled"
 launchctl bootout "$DOMAIN/$LABEL" 2>/dev/null || true
