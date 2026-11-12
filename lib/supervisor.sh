@@ -63,7 +63,7 @@ supervisor_activity() {
 # PR JSON for the branch ({} when there is none or gh fails).
 supervisor_pr_json() {
   local repo="$1" branch="$2" out
-  out=$(cd "$repo" 2>/dev/null && "$WALKAWAY_GH_CMD" pr view "$branch" --json number,state,url,mergeStateStatus,statusCheckRollup 2>/dev/null) || out=""
+  out=$(cd "$repo" 2>/dev/null && "$WALKAWAY_GH_CMD" pr view "$branch" --json number,state,url,headRefOid,mergeStateStatus,statusCheckRollup 2>/dev/null) || out=""
   [[ -n "$out" ]] && echo "$out" || echo '{}'
 }
 

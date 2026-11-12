@@ -30,6 +30,7 @@ WALKAWAY_OPERATOR_TIMEOUT="${WALKAWAY_OPERATOR_TIMEOUT:-2400}"
 WALKAWAY_PROTOCOL_PATH="${WALKAWAY_PROTOCOL_PATH:-$HOME/Projects/BPO/bpo-comp-tool/handoff/WALKAWAY_BUILD_PROTOCOL.md}"
 WALKAWAY_MERGE_CHECK_WAIT="${WALKAWAY_MERGE_CHECK_WAIT:-900}"
 WALKAWAY_MERGE_CHECK_POLL="${WALKAWAY_MERGE_CHECK_POLL:-30}"
+WALKAWAY_MERGE_EMPTY_CHECKS_GRACE="${WALKAWAY_MERGE_EMPTY_CHECKS_GRACE:-120}"
 WALKAWAY_LAUNCH_LOG_DIR="${WALKAWAY_LAUNCH_LOG_DIR:-/tmp}"
 RESUME_CAP=2
 REJECTION_CAP=2
@@ -65,6 +66,7 @@ _write_directive() {
 }
 
 # Commit only the operator log (and plan, when it lives in the same work tree). Never sweeps up builder work.
+# Returns the repo commit's status: the merge gate must not merge a PASS it could not commit.
 _commit_decision() {
   local msg="$1" repo plan plan_dir paths=()
   repo=$(_reg .repo); plan=$(_reg .plan)
@@ -77,7 +79,7 @@ _commit_decision() {
     git -C "$plan_dir" add -- "$plan" && git -C "$plan_dir" commit -q --no-verify -m "operator: $FEATURE: $msg" -- "$plan" || true
   fi
   git -C "$repo" add -- "${paths[@]}" 2>/dev/null || true
-  git -C "$repo" commit -q --no-verify -m "operator: $FEATURE: $msg" -- "${paths[@]}" 2>/dev/null || true
+  git -C "$repo" commit -q --no-verify -m "operator: $FEATURE: $msg" -- "${paths[@]}" 2>&1
 }
 
 # ── process control ──────────────────────────────────────────────────────────
@@ -287,25 +289,42 @@ GATE_SCHEMA='{"type":"object","properties":{
 
 _pr_number() { supervisor_pr_json "$(_reg .repo)" "$(_reg .branch)" | jq -r '.number // empty'; }
 
-# Wait for the PR's checks to be green (after the operator-log push re-triggers CI). Fails closed: a lookup
-# that does not return this branch's OPEN PR is a lookup failure (gh error -> "{}" would otherwise read as
-# "no checks = green"); 3 in a row -> 1, so the caller escalates instead of merging unverified.
+# _wait_checks_green <sha>: wait for the PR's checks ON THE PUSHED GATE COMMIT to be green. Fails closed:
+#  - a lookup that does not return this branch's OPEN PR is a lookup failure (gh error -> "{}" would otherwise
+#    read as "no checks = green"); 3 in a row -> 1, so the caller escalates instead of merging unverified;
+#  - a valid lookup whose headRefOid is not <sha> is GitHub still showing the previous head (and its old,
+#    possibly green rollup): pending, never green;
+#  - an empty rollup on <sha> is pending for WALKAWAY_MERGE_EMPTY_CHECKS_GRACE (checks not registered yet),
+#    then green (a repo with no CI can still merge).
+# Sets WAIT_REASON for the caller's escalation.
 _wait_checks_green() {
-  local waited=0 c pr lookup_fails=0
-  while (( waited <= WALKAWAY_MERGE_CHECK_WAIT )); do
+  local sha="$1" c pr lookup_fails=0 v now deadline empty_since=0
+  deadline=$(( $(date +%s) + WALKAWAY_MERGE_CHECK_WAIT ))
+  WAIT_REASON="checks still pending after ${WALKAWAY_MERGE_CHECK_WAIT}s"
+  while :; do
     pr=$(supervisor_pr_json "$(_reg .repo)" "$(_reg .branch)")
-    if [[ "$(jq -r 'if .number != null and .state == "OPEN" then "ok" else "bad" end' <<< "$pr" 2>/dev/null)" != "ok" ]]; then
-      lookup_fails=$((lookup_fails + 1))
-      (( lookup_fails >= 3 )) && return 1
-    else
-      lookup_fails=0
-      c=$(supervisor_checks "$pr")
-      [[ "$c" == "green" ]] && return 0
-      [[ "$c" == "failed" ]] && return 1
-    fi
-    sleep "$WALKAWAY_MERGE_CHECK_POLL"; waited=$((waited + WALKAWAY_MERGE_CHECK_POLL))
+    v=$(jq -r --arg sha "$sha" 'if .number == null or .state != "OPEN" then "bad"
+      elif .headRefOid != $sha then "stale" elif (.statusCheckRollup // []) == [] then "empty" else "ok" end' <<< "$pr" 2>/dev/null)
+    now=$(date +%s)
+    case "$v" in
+      ok|empty|stale) lookup_fails=0 ;;
+      *) lookup_fails=$((lookup_fails + 1))
+         (( lookup_fails >= 3 )) && { WAIT_REASON="PR lookup failed 3 times"; return 1; } ;;
+    esac
+    case "$v" in
+      stale) WAIT_REASON="PR head never reached the gate commit ${sha:0:7} within ${WALKAWAY_MERGE_CHECK_WAIT}s" ;;
+      empty)
+        (( empty_since == 0 )) && empty_since=$now
+        (( now - empty_since >= WALKAWAY_MERGE_EMPTY_CHECKS_GRACE )) && return 0
+        WAIT_REASON="no checks registered on ${sha:0:7}" ;;
+      ok)
+        c=$(supervisor_checks "$pr")
+        [[ "$c" == "green" ]] && return 0
+        [[ "$c" == "failed" ]] && { WAIT_REASON="checks failed on ${sha:0:7}"; return 1; } ;;
+    esac
+    (( now >= deadline )) && return 1
+    sleep "$WALKAWAY_MERGE_CHECK_POLL"
   done
-  return 1
 }
 
 _is_worktree() { [[ "$(_reg .repo)" != "$(_reg .repo_root)" ]]; }
@@ -358,10 +377,16 @@ $findings"
   case "$verdict" in
     PASS)
       _oplog "MERGE GATE: PASS (PR #$pr)" "$summary"
-      _commit_decision "merge gate PASS"
-      git -C "$(_reg .repo)" push -q origin "$(_reg .branch)" 2>/dev/null || true
-      if ! _wait_checks_green; then
-        op_escalate "Merge gate passed for $FEATURE but PR #$pr checks are not green after the gate push. Merge anyway?"
+      # The PASS decision must be in the PR before anything merges: a failed commit or push escalates.
+      local push_out sha
+      if ! push_out=$(_commit_decision "merge gate PASS") ||
+         ! push_out=$(git -C "$(_reg .repo)" push -q origin "$(_reg .branch)" 2>&1); then
+        op_escalate "Merge gate PASS for $FEATURE could not be pushed ($(echo "${push_out:-commit failed}" | tail -1 | cut -c1-160)). Push/merge manually?"
+        return 0
+      fi
+      sha=$(git -C "$(_reg .repo)" rev-parse HEAD)
+      if ! _wait_checks_green "$sha"; then
+        op_escalate "Merge gate passed for $FEATURE but PR #$pr checks are not green after the gate push ($WAIT_REASON). Merge anyway?"
         return 0
       fi
       _kill_leftovers
@@ -410,10 +435,30 @@ $findings"
   esac
 }
 
+# _other_active_build <root> <field>: the first other registered, non-MERGED build whose <field> is <root>.
+#   .repo      -> a builder working in the root checkout itself (its branch must not be switched under it)
+#   .repo_root -> any builder in this repository, root or worktree (one builder per repo)
+_other_active_build() {
+  local root="$1" field="$2" feature
+  while IFS= read -r feature; do
+    [[ -z "$feature" || "$feature" == "$FEATURE" ]] && continue
+    [[ "$(registry_get "$feature" "$field")" == "$root" ]] || continue
+    [[ "$(registry_get "$feature" .state)" == "MERGED" ]] && continue
+    echo "$feature"; return 0
+  done < <(registry_list)
+}
+
 # After a merge, put the repo on its freshly pulled default branch (queue launches need it for walkaway's base
-# guard; walkaway-cli itself runs the supervisor from its working tree). A dirty tree is left alone.
+# guard; walkaway-cli itself runs the supervisor from its working tree). A dirty tree is left alone. If another
+# build is active in the root checkout, only remote refs are updated (echoes why).
 _sync_default() {
-  local root="$1" default
+  local root="$1" default active
+  active=$(_other_active_build "$root" .repo)
+  if [[ -n "$active" ]]; then
+    git -C "$root" fetch -q origin 2>/dev/null || true
+    echo "default-branch sync deferred: $active active in root"
+    return 0
+  fi
   default=$(git -C "$root" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null | sed 's#^origin/##')
   default=${default:-main}
   git -C "$root" checkout -q "$default" 2>/dev/null && git -C "$root" pull -q --ff-only origin "$default" 2>/dev/null || true
@@ -421,18 +466,14 @@ _sync_default() {
 
 # Launch the repo's next queued plan (one builder per repo). Echoes the launched feature, if any.
 _launch_next() {
-  local root key qfile next active feature
+  local root key qfile next active
   root=$(_reg .repo_root); key=$(registry_repo_key "$root")
   qfile="$(queue_dir)/${key}.txt"
   [[ -f "$qfile" ]] || return 0
   next=$(grep -v '^[[:space:]]*\(#\|$\)' "$qfile" | head -1 || true)
   [[ -n "$next" ]] || return 0
-  while IFS= read -r feature; do
-    [[ -z "$feature" || "$feature" == "$FEATURE" ]] && continue
-    [[ "$(registry_get "$feature" .repo_root)" == "$root" ]] || continue
-    case "$(registry_get "$feature" .state)" in MERGED) ;; *) active=$feature ;; esac
-  done < <(registry_list)
-  if [[ -n "${active:-}" ]]; then
+  active=$(_other_active_build "$root" .repo_root)
+  if [[ -n "$active" ]]; then
     echo "queued $(basename "$next") held: $active still active in $key"
     return 0
   fi
@@ -462,13 +503,13 @@ _launch_next() {
 # The MERGED outcome goes to the operator log under $WALKAWAY_HOME, the registry and ntfy only: the build's
 # checkout is gone or back on the default branch (or the next feature's), so nothing is written into a repo.
 op_post_merge() {
-  local reason="$1" next
+  local reason="$1" next sync
   _kill_leftovers
   _prune_worktree
-  _sync_default "$(_reg .repo_root)"
+  sync=$(_sync_default "$(_reg .repo_root)")
   next=$(_launch_next)
   mkdir -p "${WALKAWAY_HOME}/logs"
-  printf '[%s] MERGED: %s. %s\n' "$(_et)" "$reason" "${next:-No queued plan for this repo.}" >> "${WALKAWAY_HOME}/logs/operator-${FEATURE}.log"
+  printf '[%s] MERGED: %s. %s%s\n' "$(_et)" "$reason" "${sync:+$sync. }" "${next:-No queued plan for this repo.}" >> "${WALKAWAY_HOME}/logs/operator-${FEATURE}.log"
   supervisor_transition "$FEATURE" MERGED "$reason; ${next:-queue empty}"
 }
 

@@ -41,8 +41,8 @@ tick() { bash "$ROOT/lib/supervisor.sh" tick >> "$W/supervisor.log" 2>&1; }
 wait_operator() { # feature
   # A relaunch re-registers (operator_pid -> null, last_action "relaunched") before the operator records its
   # action, so also wait for that interim last_action to be replaced.
-  local i p
-  for i in $(seq 1 60); do
+  local p
+  for _ in $(seq 1 60); do
     p=$(reg "$1" .operator_pid)
     { [[ -z "$p" ]] || ! kill -0 "$p" 2>/dev/null; } && [[ "$(reg "$1" .last_action)" != "relaunched" ]] && return 0
     sleep 1
@@ -50,8 +50,8 @@ wait_operator() { # feature
 }
 launch() { # repo feature
   (cd "$1" || exit 1; nohup bash "$ROOT/walkaway.sh" "$1/handoff/build-plan-$2.md" > "$W/logs/walkaway-$2.log" 2>&1 < /dev/null &)
-  local i
-  for i in $(seq 1 30); do [[ -f "$WALKAWAY_HOME/registry/$2.json" ]] && return 0; sleep 1; done
+  local _
+  for _ in $(seq 1 30); do [[ -f "$WALKAWAY_HOME/registry/$2.json" ]] && return 0; sleep 1; done
 }
 kill_builder() { kill "$(reg "$1" .builder_pid)"; sleep 1; }
 PASS_DECISION='{"verdict":"PASS","criteria":[{"id":"AC1","met":true,"evidence":"10/10"}],"ci_green":true,"codex_closed":true,"findings":[],"rows_spot_checked":10}'
@@ -226,11 +226,77 @@ check "remote + local branch deleted" bash -c "[[ -z \$(git -C '$R9' ls-remote -
 check "origin main has the squash commit" bash -c "git -C '$W/repos/r9-origin.git' log main --format=%s | grep -q 'feature/t-wtok'"
 check "repo checkout clean after the merge" bash -c "[[ -z \$(git -C '$R9' status --porcelain) ]]"
 
+# ── T12: GitHub still reports the pre-push head (old green rollup) -> no merge until the head matches ─
+echo "T12 stale head after the gate push"
+wt_build r10 t-stale > /dev/null
+echo "$PASS_DECISION" > "$W/decisions/t-stale.json"
+cat > "$W/decisions/t-stale.hook" <<EOF
+touch '$GH_SIM_DIR/stale-head'
+( for i in \$(seq 1 300); do grep -q '  view: stale head' '$GH_SIM_DIR/calls.log' && break; sleep 0.2; done
+  sleep 2; rm -f '$GH_SIM_DIR/stale-head'; echo "  stale-head cleared \$(date +%s)" >> '$GH_SIM_DIR/calls.log' ) > /dev/null 2>&1 &
+EOF
+gate t-stale
+check "stale head was observed" grep -q '  view: stale head' "$GH_SIM_DIR/calls.log"
+check "t-stale MERGED once the head matched" [ "$(reg t-stale .state)" == "MERGED" ]
+check "gh pr merge called only after the head matched" \
+  awk '/stale-head cleared/ { c = NR } /\/r10 gh pr merge/ { m = NR } END { exit !(c && m && m > c) }' "$GH_SIM_DIR/calls.log"
+
+echo "T12b head never matches -> escalate, no merge"
+wt_build r11 t-stuck > /dev/null
+echo "$PASS_DECISION" > "$W/decisions/t-stuck.json"
+echo "touch '$GH_SIM_DIR/stale-head'" > "$W/decisions/t-stuck.hook"
+WALKAWAY_MERGE_CHECK_WAIT=4 gate t-stuck
+rm -f "$GH_SIM_DIR/stale-head"
+check "escalated: head never reached the gate commit" grep -q 't-stuck: ESCALATED - Merge gate passed for t-stuck but PR #[0-9]* checks are not green after the gate push (PR head never reached the gate commit' "$WALKAWAY_HOME/logs/ntfy.log"
+check "gh pr merge NOT called" bash -c "[[ -z \$(grep '/r11 gh pr merge' '$GH_SIM_DIR/calls.log') ]]"
+
+# ── T13: empty rollup on the matching head -> merge only after the grace window ─
+echo "T13 empty rollup grace"
+wt_build r12 t-empty > /dev/null
+echo "$PASS_DECISION" > "$W/decisions/t-empty.json"
+echo "touch '$GH_SIM_DIR/empty-checks'" > "$W/decisions/t-empty.hook"
+WALKAWAY_MERGE_EMPTY_CHECKS_GRACE=2 gate t-empty
+rm -f "$GH_SIM_DIR/empty-checks"
+check "t-empty MERGED after the grace window" [ "$(reg t-empty .state)" == "MERGED" ]
+check "merge >= 2s after the first empty-rollup view" \
+  awk '/  view: empty rollup / && !f { f = $4 } /\/r12 gh pr merge/ { m = $2 } END { exit !(f && m && m - f >= 2) }' "$GH_SIM_DIR/calls.log"
+
+# ── T14: worktree merge while another build runs in the root checkout -> root untouched, queue held ─
+echo "T14 post-merge sync with an active root builder"
+R13=$(wt_build r13 t-wtroot)
+git -C "$R13" checkout -q -b feature/t-rootbusy
+sleep 600 > /dev/null 2>&1 &
+bash -c "source '$ROOT/lib/registry.sh'; registry_register t-rootbusy '$R13' '$R13' '$R13/handoff/build-plan-t-rootbusy.md' feature/t-rootbusy '$!' '' '' false"
+mkdir -p "$W/plans"; drill_plan t-q13 > "$W/plans/build-plan-t-q13.md"
+echo "$W/plans/build-plan-t-q13.md" > "$WALKAWAY_HOME/queue/r13.txt"
+head13=$(git -C "$R13" rev-parse HEAD); reflog13=$(git -C "$R13" reflog | wc -l)
+echo "$PASS_DECISION" > "$W/decisions/t-wtroot.json"
+gate t-wtroot
+check "t-wtroot MERGED" [ "$(reg t-wtroot .state)" == "MERGED" ]
+check "root still on the active build's branch at the same HEAD" \
+  bash -c "[[ \$(git -C '$R13' symbolic-ref --short HEAD) == feature/t-rootbusy && \$(git -C '$R13' rev-parse HEAD) == '$head13' ]]"
+check "no checkout or pull ran in the root (HEAD reflog unchanged)" [ "$(git -C "$R13" reflog | wc -l)" -eq "$reflog13" ]
+check "remote refs fetched (origin/main has the squash commit)" bash -c "git -C '$R13' log origin/main --format=%s | grep -q 'feature/t-wtroot'"
+check "sync deferral logged" grep -q 'default-branch sync deferred: t-rootbusy active in root' "$WALKAWAY_HOME/logs/operator-t-wtroot.log"
+check "queue held" bash -c "grep -q t-q13 '$WALKAWAY_HOME/queue/r13.txt' && grep -q 't-wtroot: MERGED - .*held: t-rootbusy still active' '$WALKAWAY_HOME/logs/ntfy.log'"
+
+# ── T15: the gate push is rejected -> escalate, gh pr merge never called ─────
+echo "T15 gate push failure"
+wt_build r14 t-pushfail > /dev/null
+printf '#!/bin/sh\necho "rejected by test pre-receive hook" >&2\nexit 1\n' > "$W/repos/r14-origin.git/hooks/pre-receive"
+chmod +x "$W/repos/r14-origin.git/hooks/pre-receive"
+echo "$PASS_DECISION" > "$W/decisions/t-pushfail.json"
+gate t-pushfail
+check "escalated: PASS could not be pushed" grep -q 't-pushfail: ESCALATED - Merge gate PASS for t-pushfail could not be pushed (.*). Push/merge manually?' "$WALKAWAY_HOME/logs/ntfy.log"
+check "gh pr merge NOT called" bash -c "[[ -z \$(grep '/r14 gh pr merge' '$GH_SIM_DIR/calls.log') ]]"
+
 # ── T7: walkaway status renders from the registry ────────────────────────────
 echo "T7 status"
 out=$(bash "$ROOT/walkaway.sh" status)
 missing=0
-for f in t-run t-fail t-prot t-bad t-good t-next t-codex t-ghdown t-wtfail t-wtok; do grep -q "^$f " <<< "$out" || missing=1; done
+for f in t-run t-fail t-prot t-bad t-good t-next t-codex t-ghdown t-wtfail t-wtok t-stale t-stuck t-empty t-wtroot t-rootbusy t-pushfail; do
+  grep -q "^$f " <<< "$out" || missing=1
+done
 check "status lists every build" [ "$missing" -eq 0 ]
 
 echo ""
