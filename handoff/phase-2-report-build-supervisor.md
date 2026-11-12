@@ -1,0 +1,11 @@
+# Phase 2 report - build-supervisor (supervisor state machine)
+
+- New `lib/supervisor.sh` (`tick | classify <feature> | adopt`). Per registered build it reads (a) builder PID alive with start-time guard, (b) activity = newest mtime under handoff/ + branch HEAD commit time + newest Claude Code transcript for the build dir (refinement: a working builder appends to its transcript continuously, so long coding phases are not misread as STALLED), (c) report files newer than the last launch, (d) `gh pr view <branch>` state + statusCheckRollup.
+- Classification order: MERGED (registry or PR merged) > ESCALATED (sticky until a relaunch re-registers) > STOPPED (failure-report-*<feature>* newer than launch, or build report + CI failed) > DONE (build report newer than launch + PR open + checks green; no checks configured = green) > DIED (PID gone) > STALLED (alive, idle >= 40 min) > RUNNING. A build report with CI pending / no PR falls through to liveness.
+- `supervisor_transition` records state/state_since/last_action and sends exactly ONE ntfy line `<feature>: <STATE> - <action>` only when the state changes (ESCALATED = priority high). Every send is also appended to `~/.walkaway-cli/logs/ntfy.log` (`lib/notify.sh`).
+- Dispatch: DIED/STALLED -> `operator.sh resume` synchronously; STOPPED -> detached `operator.sh triage`; DONE -> detached `operator.sh gate` (so a slow gate never blocks the 2-min tick); MERGED -> `operator.sh post-merge`. While an operator job is alive the build is skipped. If an operator job ends without resolving its launch, the next tick escalates (no loops).
+- Heartbeat: at 09/13/17 ET (TZ=America/New_York), once per slot, only if a build is RUNNING/ESCALATED: one line per non-merged build.
+- Single-instance lock: mkdir lock with holder PID; stale lock (dead holder) is taken over. Last tick epoch written to state/supervisor-last-tick (shown by `walkaway status`).
+- Sanity: classify on a stub build with a dead builder -> `DIED`; checks parser: success+pending -> pending, none -> green, failure -> failed.
+- Gates: shellcheck -S warning rc=0; tests/test-parse-plan.sh 7/7.
+- Files: lib/supervisor.sh (new), lib/notify.sh (new). (operator.sh lands in Phase 3; dispatch calls it.)
