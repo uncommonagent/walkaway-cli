@@ -22,3 +22,29 @@ Full review comments:
   The MERGED log entry is appended after checkout synchronization and queue launch, and is never committed. For ordinary builds this leaves an operator modification on main or the next feature branch; for worktree builds `_oplog` recreates the already-removed checkout directory just to hold the log. Record and commit the merge decision in a surviving repository before cleanup or launching the next builder.
 
 Status: OPEN - 2 P1, 3 P2. Build stopped per protocol (Codex P1 = stop rule; routed to the supervisor operator via failure-report-build-supervisor-codex.md).
+
+## Cycle 1 fixes (3f4af2b, approved fix 1)
+All 5 cycle-1 findings fixed with regression tests (operator 51/51, states 13/13; the 13 new operator checks + new
+fixture fail on 4e6fabc and pass on 3f4af2b). Cycle-1 status: CLOSED.
+
+## Cycle 2 - FINAL (2026-11-12 ~15:55 EST, `codex review --base main`, HEAD 3f4af2b)
+
+The merge flow can accept stale CI results or proceed after failing to publish its gate decision. Post-merge synchronization can also disrupt another active builder sharing the repository.
+
+Full review comments:
+
+- [P1] Verify checks against the newly pushed gate commit — lib/operator.sh:310-312
+  After the gate commit is pushed, GitHub can briefly return the previous commit's successful check rollup before checks for the new head are registered. `_wait_checks_green` immediately accepts that response (including an empty rollup), so this path can merge before the gate commit's CI runs. Track the pushed head SHA and wait for checks associated with that head rather than accepting any green response for the open PR.
+
+- [P1] Avoid switching a checkout used by another active builder — lib/operator.sh:465-466
+  When a worktree build merges while another build is running in the main checkout of the same repository, `op_post_merge` unconditionally calls `_sync_default`, which checks that checkout out onto the default branch and pulls. The active-build check in `_launch_next` happens afterward and cannot prevent this from switching the running builder's branch underneath it. Check for a builder using the root checkout before synchronizing it, or update only remote refs until that checkout is idle.
+
+- [P2] Abort merging when the gate decision cannot be pushed — lib/operator.sh:361-362
+  If the gate push fails because of authentication, connectivity, or a non-fast-forward update, `|| true` discards the failure and the operator proceeds to check and merge the existing remote PR. This can merge without the required committed gate decision in the PR, while the local decision commit is left behind or deleted during worktree cleanup. Treat a failed commit or push as an escalation and do not attempt the merge.
+
+Builder verification: all three confirmed against the code (no head-SHA comparison in `_wait_checks_green`;
+`_sync_default` runs before the active-build check in `_launch_next`; `git push ... || true` at the gate push).
+
+Status: OPEN - 2 P1, 1 P2. Codex cap (2 cycles) reached. Build STOPPED per the approved directive ("if cycle 2
+returns any P1, STOP and write a new failure report; do not start cycle 3"):
+failure-report-build-supervisor-codex-cycle-2.md.

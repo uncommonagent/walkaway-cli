@@ -1,0 +1,3 @@
+supervisor last tick: 2026-11-12 15:47:37 EST
+FEATURE           REPO          STATE    AGE  IN-STATE  LAST ACTION
+build-supervisor  walkaway-cli  RUNNING  11m  9m        builder pid 34230, active 0m ago
