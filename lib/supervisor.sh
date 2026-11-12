@@ -190,7 +190,13 @@ supervisor_handle() {
   [[ "$new" == "$old" ]] && { registry_update "$feature" '.last_action = $a' --arg a "$reason"; return 0; }
 
   case "$new" in
-    RUNNING)   supervisor_transition "$feature" RUNNING "$reason" ;;
+    RUNNING)
+      # First RUNNING after an operator relaunch carries the operator's action (approved fix / rejection / resume).
+      local la
+      la=$(registry_get "$feature" .last_action)
+      [[ "$old" == "LAUNCHED" && "$la" == *"relaunched (builder pid"* ]] && reason="$la; $reason"
+      supervisor_transition "$feature" RUNNING "$reason"
+      ;;
     ESCALATED) supervisor_transition "$feature" ESCALATED "$reason" high ;;
     DIED|STALLED)
       supervisor_transition "$feature" "$new" "$reason; auto-resume starting"

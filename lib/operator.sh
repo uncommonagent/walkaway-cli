@@ -54,8 +54,12 @@ _write_directive() {
   local title="$1" body="$2" plan tmp
   plan=$(_reg .plan)
   tmp="${plan}.tmp.$$"
-  awk -v hdr="## RESUME DIRECTIVE (${title}, $(_et)) - read first" -v body="$body" '
-    NR == 1 { print; print ""; print hdr; print body; next } { print }' "$plan" > "$tmp" && mv "$tmp" "$plan"
+  # Multi-line bodies (every model-written directive) must survive intact: no awk -v (rejects newlines).
+  {
+    head -n 1 "$plan"
+    printf '\n## RESUME DIRECTIVE (%s, %s) - read first\n%s\n' "$title" "$(_et)" "$body"
+    tail -n +2 "$plan"
+  } > "$tmp" && mv "$tmp" "$plan" || { rm -f "$tmp"; return 1; }
 }
 
 # Commit only the operator log (and plan, when it lives in the same work tree). Never sweeps up builder work.
@@ -63,6 +67,7 @@ _commit_decision() {
   local msg="$1" repo plan plan_dir paths=()
   repo=$(_reg .repo); plan=$(_reg .plan)
   paths+=("$(_oplog_path)")
+  [[ -f "$repo/handoff/gate-${FEATURE}.md" ]] && paths+=("$repo/handoff/gate-${FEATURE}.md")
   plan_dir=$(git -C "$(dirname "$plan")" rev-parse --show-toplevel 2>/dev/null || true)
   if [[ "$plan_dir" == "$(git -C "$repo" rev-parse --show-toplevel 2>/dev/null)" ]]; then
     paths+=("$plan")
@@ -336,6 +341,8 @@ Criteria:
 $criteria
 Findings:
 $findings"
+  # Protocol "Merge-gate acceptance standard" rule 10: gate-<feature>.md with PASS/FAIL per AC + evidence read.
+  printf '# Merge gate - %s (PR #%s, %s)\n\n%s\n' "$FEATURE" "$pr" "$(_et)" "$summary" > "$(_reg .repo)/handoff/gate-${FEATURE}.md"
 
   case "$verdict" in
     PASS)
@@ -384,6 +391,15 @@ $findings"
   esac
 }
 
+# After a merge, put the repo on its freshly pulled default branch (queue launches need it for walkaway's base
+# guard; walkaway-cli itself runs the supervisor from its working tree). A dirty tree is left alone.
+_sync_default() {
+  local root="$1" default
+  default=$(git -C "$root" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null | sed 's#^origin/##')
+  default=${default:-main}
+  git -C "$root" checkout -q "$default" 2>/dev/null && git -C "$root" pull -q --ff-only origin "$default" 2>/dev/null || true
+}
+
 # Launch the repo's next queued plan (one builder per repo). Echoes the launched feature, if any.
 _launch_next() {
   local root key qfile next active feature
@@ -408,10 +424,7 @@ _launch_next() {
   # Remove it from the queue first so a failing launch never relaunches in a loop.
   local tmp="${qfile}.tmp.$$"
   awk -v n="$next" 'done || $0 != n { print; next } { done = 1 }' "$qfile" > "$tmp" && mv "$tmp" "$qfile"
-  local default
-  default=$(git -C "$root" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null | sed 's#^origin/##')
-  default=${default:-main}
-  git -C "$root" checkout -q "$default" 2>/dev/null && git -C "$root" pull -q --ff-only origin "$default" 2>/dev/null || true
+  _sync_default "$root"
   local nfeature log
   nfeature=$(bash "${OP_DIR}/parse-plan.sh" "$next" 2>/dev/null | sed -n 's/^FEATURE_NAME=//p')
   log="${WALKAWAY_LAUNCH_LOG_DIR}/walkaway-${nfeature:-next}.log"
@@ -431,6 +444,7 @@ op_post_merge() {
   local reason="$1" next
   _kill_leftovers
   _prune_worktree
+  _sync_default "$(_reg .repo_root)"
   next=$(_launch_next)
   _oplog "MERGED" "$reason. ${next:-No queued plan for this repo.}"
   supervisor_transition "$FEATURE" MERGED "$reason; ${next:-queue empty}"

@@ -1,3 +1,4 @@
 ~/.walkaway-cli/
 *.log
 *.pid
+tests/drill/work/

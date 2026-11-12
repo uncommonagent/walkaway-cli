@@ -90,14 +90,16 @@ echo "T3 triage approve"
 R2=$(drill_make_repo "$W/repos" r2 t-fail)
 drill_set_modes "$R2" t-fail fail-scoped work
 drill_failure "$R2" t-fail scoped
-echo '{"decision":"approve","protected_hit":false,"in_scope":true,"directive":"Fix lib/export.sh total with awk; add regression test total=417.50; re-run phase 3 gates; continue from the build log.","rationale":"scoped"}' > "$W/decisions/t-fail.json"
+echo '{"decision":"approve","protected_hit":false,"in_scope":true,"directive":"Fix lib/export.sh total with awk.\nAdd regression test total=417.50; re-run phase 3 gates.\nThen continue from the build log.","rationale":"scoped"}' > "$W/decisions/t-fail.json"
 launch "$R2" t-fail
 sleep 6; tick; wait_operator t-fail
 check "approved: relaunched with directive" [ "$(reg t-fail .launch_count)/$(reg t-fail .approvals)" == "2/1" ]
-check "approving directive in plan" grep -q 'Fix lib/export.sh total with awk' "$R2/handoff/build-plan-t-fail.md"
+check "approving multi-line directive in plan" bash -c "grep -q '^Fix lib/export.sh total with awk.\$' '$R2/handoff/build-plan-t-fail.md' && grep -q '^Then continue from the build log.\$' '$R2/handoff/build-plan-t-fail.md'"
+check "no stray plan tmp files" bash -c "! ls '$R2'/handoff/*.tmp.* >/dev/null 2>&1"
 check "STOPPED notified once" [ "$(grep -c 't-fail: STOPPED - ' "$WALKAWAY_HOME/logs/ntfy.log")" -eq 1 ]
 tick
 check "back to RUNNING (failure report older than relaunch)" [ "$(reg t-fail .state)" == "RUNNING" ]
+check "RUNNING ntfy names the operator action" grep -q 't-fail: RUNNING - approved fix 1, relaunched (builder pid [0-9]*); builder pid' "$WALKAWAY_HOME/logs/ntfy.log"
 
 # ── T4: protected -> ESCALATE even if the model says approve ─────────────────
 echo "T4 triage protected guard"
@@ -136,6 +138,7 @@ sleep 7; tick; wait_operator t-good
 check "t-good MERGED" [ "$(reg t-good .state)" == "MERGED" ]
 check "MERGED ntfy names the launched next plan" grep -q 't-good: MERGED - PR #[0-9]* squash-merged by merge gate; launched next: t-next' "$WALKAWAY_HOME/logs/ntfy.log"
 check "origin main has the squash commit" bash -c "git -C '$W/repos/r5-origin.git' log main --format=%s | grep -q 'feature/t-good'"
+check "local main fast-forwarded to merged origin main" bash -c "[[ \$(git -C '$R5' rev-parse main) == \$(git -C '$W/repos/r5-origin.git' rev-parse main) ]]"
 check "queue popped" bash -c "! grep -q t-next '$WALKAWAY_HOME/queue/r5.txt'"
 check "t-next registered + alive" kill -0 "$(reg t-next .builder_pid)"
 tick

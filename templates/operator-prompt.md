@@ -50,7 +50,9 @@ The builder wrote a failure report (or its PR checks failed after the build repo
 Always fill rationale (2-4 sentences) and in_scope / protected_hit honestly.
 
 ## MODE: MERGE GATE
-The builder wrote its build report and the PR's checks are green. Verify the build yourself before it merges:
+The builder wrote its build report and the PR's checks are green. Apply the protocol's "Merge-gate acceptance
+standard" section (evidence MANIFEST, audit files, rendered-vs-source checks, domain quality-rules files) and
+verify the build yourself before it merges. The supervisor writes your verdict to handoff/gate-<feature>.md.
 1. List every acceptance criterion in the plan. For each, find the ARCHIVED evidence (handoff/ evidence dirs,
    smoke-results, phase-6 report, audit/summary JSON, screenshots) and decide met / not met with a concrete
    evidence pointer (file + value).

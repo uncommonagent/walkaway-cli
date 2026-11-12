@@ -41,7 +41,9 @@ case "$sub" in
     f=$(_find "$arg"); [[ -n "$f" ]] || exit 1
     git -C "$common" diff "origin/main...$(jq -r .headRefName "$f")" ;;
   create-sim)
+    until mkdir "$GH_SIM_DIR/.number-lock" 2>/dev/null; do sleep 0.2; done
     n=$(( $(cat "$GH_SIM_DIR/next-number" 2>/dev/null || echo 100) + 1 )); echo "$n" > "$GH_SIM_DIR/next-number"
+    rmdir "$GH_SIM_DIR/.number-lock"
     jq -n --argjson n "$n" --arg b "$arg" '{number:$n, state:"OPEN", headRefName:$b, url:("sim://pr/"+($n|tostring)),
       mergeStateStatus:"CLEAN", statusCheckRollup:[{__typename:"CheckRun", name:"drill-ci", status:"COMPLETED", conclusion:"SUCCESS"}]}' \
       > "$dir/${arg//\//__}.json"

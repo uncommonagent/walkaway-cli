@@ -1,0 +1,8 @@
+supervisor last tick: 2026-11-12 15:30:10 EST
+FEATURE   REPO      STATE      AGE  IN-STATE  LAST ACTION
+drill-a   drill-ra  RUNNING    2m   0m        auto-resume 1/2 relaunched (builder pid 19210); builder pid 19210, active 0m ago
+drill-b   drill-rb  RUNNING    3m   2m        builder pid 17444, active 0m ago
+drill-c   drill-rc  ESCALATED  6m   3m        waiting for Jim
+drill-d   drill-rd  RUNNING    3m   2m        builder pid 18171, active 0m ago
+drill-e   drill-re  MERGED     6m   3m        PR #102 squash-merged by merge gate; launched next: drill-e2 (builder pid 17871)
+drill-e2  drill-re  RUNNING    3m   2m        builder pid 17871, active 0m ago

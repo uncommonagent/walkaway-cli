@@ -49,10 +49,11 @@ case "$mode" in
     kind=${mode#complete-}
     log "phase 6 smoke archived ($kind evidence)"
     rm -rf "handoff/drill-evidence"
-    mkdir -p handoff/drill-evidence
+    mkdir -p handoff/drill-evidence lib
     cp -R "$drill/evidence-$kind/." handoff/drill-evidence/
+    cp "$drill/export.sh" lib/export.sh
     printf '# Codex review - %s\n\nCycle 1: no P1, no P2. Cycle cap respected. Closed.\n' "$feature" > "handoff/codex-review-$feature.md"
-    git add handoff && git commit -qm "drill: $feature evidence ($kind)" && git push -q origin "$branch"
+    git add handoff lib && git commit -qm "drill: $feature export + evidence ($kind)" && git push -q origin "$branch"
     "${WALKAWAY_GH_CMD:-gh}" pr create-sim "$branch" > /dev/null
     printf '# Build report - %s\n\nAll phases done. Evidence: handoff/drill-evidence/ (summary.json, rows.json, result.png). PR open, CI green.\n' "$feature" > "handoff/build-report-$feature.md"
     git add handoff && git commit -qm "drill: $feature build report" && git push -q origin "$branch"

@@ -42,6 +42,9 @@ cat > "$PLIST" <<EOF
   </array>
   <key>StartInterval</key><integer>120</integer>
   <key>RunAtLoad</key><true/>
+  <!-- Relaunched builders and detached operator jobs must outlive the tick: by default launchd kills the
+       job's whole process group when the tick exits (nohup does not protect against that). -->
+  <key>AbandonProcessGroup</key><true/>
   <key>EnvironmentVariables</key>
   <dict>
     <key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:${HOME}/.local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>

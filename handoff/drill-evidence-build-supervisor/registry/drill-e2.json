@@ -1,0 +1,23 @@
+{
+  "feature": "drill-e2",
+  "repo": "/Users/jimross/Projects/walkaway-cli/tests/drill/work/repos/drill-re",
+  "repo_root": "/Users/jimross/Projects/walkaway-cli/tests/drill/work/repos/drill-re",
+  "plan": "/Users/jimross/Projects/walkaway-cli/tests/drill/work/repos/drill-re/handoff/build-plan-drill-e2.md",
+  "branch": "feature/drill-e2",
+  "builder_pid": 17871,
+  "builder_started": "Thu Nov 12 15:26:33 2026",
+  "watcher_pid": 17912,
+  "launched_at": "2026-11-12T20:26:33Z",
+  "launched_epoch": 1794515193,
+  "launch_log": "/Users/jimross/Projects/walkaway-cli/tests/drill/work/logs/walkaway-drill-e2.log",
+  "worktree": false,
+  "resume_count": 0,
+  "gate_rejections": 0,
+  "approvals": 0,
+  "launch_count": 1,
+  "queue_next": null,
+  "state": "RUNNING",
+  "state_since": 1794515289,
+  "last_action": "builder pid 17871, active 0m ago",
+  "operator_pid": null
+}
