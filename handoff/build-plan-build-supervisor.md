@@ -1,6 +1,6 @@
 # Walkaway Build Plan: build-supervisor
 
-## RESUME DIRECTIVE (auto, approved fix 2, 2026-11-12 15:52 ET) - read first
+## [DONE] RESUME DIRECTIVE (auto, approved fix 2, 2026-11-12 15:52 ET) - read first
 RESUME DIRECTIVE (operator, approved) - build-supervisor, Phase 7 Codex cycle 2 (FINAL)
 
 What failed: Codex cycle 2 (HEAD 3f4af2b) found 2 P1 and 1 P2 in the lib/operator.sh merge path: stale-check green, post-merge sync while a builder is active in the root checkout, and a swallowed gate push failure. Full text: handoff/codex-review-build-supervisor.md.
