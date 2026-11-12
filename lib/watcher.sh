@@ -10,8 +10,9 @@
 #   watcher_stop  <feature-name>                 # kill background process
 #   watcher_running <feature-name>               # returns 0 if running
 
-WALKAWAY_STATE_DIR="${WALKAWAY_STATE_DIR:-$HOME/.walkaway-cli/state}"
-WALKAWAY_LOG_DIR="${WALKAWAY_LOG_DIR:-$HOME/.walkaway-cli/logs}"
+WALKAWAY_HOME="${WALKAWAY_HOME:-$HOME/.walkaway-cli}"
+WALKAWAY_STATE_DIR="${WALKAWAY_STATE_DIR:-$WALKAWAY_HOME/state}"
+WALKAWAY_LOG_DIR="${WALKAWAY_LOG_DIR:-$WALKAWAY_HOME/logs}"
 NTFY_TOPIC="${NTFY_TOPIC:-jim-throughline-9k2x7q-builds}"
 
 # ── internal: notification helper ─────────────────────────────────────────────
@@ -131,6 +132,8 @@ watcher_start() {
     >> "$log_file" 2>&1 &
   local watcher_pid=$!
   disown "$watcher_pid"
+  # shellcheck disable=SC2034  # read by walkaway.sh for the registry
+  WATCHER_PID="$watcher_pid"
 
   # Write state JSON
   cat > "$pid_file" <<JSONEOF

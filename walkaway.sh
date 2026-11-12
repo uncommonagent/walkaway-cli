@@ -18,6 +18,8 @@ unset _SOURCE _DIR
 # shellcheck source=lib/watcher.sh
 # shellcheck source=lib/launch-cc.sh
 # shellcheck source=lib/worktree.sh
+# shellcheck source=lib/registry.sh
+source "${SCRIPT_DIR}/lib/registry.sh"
 source "${SCRIPT_DIR}/lib/watcher.sh"
 source "${SCRIPT_DIR}/lib/launch-cc.sh"
 source "${SCRIPT_DIR}/lib/worktree.sh"
@@ -29,6 +31,7 @@ walkaway — kick off a walkaway build session
 
 USAGE
   walkaway [OPTIONS] <build-plan-path>
+  walkaway status          One table of every registered build (from the registry)
 
 OPTIONS
   --worktree    Create a git worktree for a parallel build. Copies .env.local,
@@ -54,11 +57,19 @@ EXAMPLES
   walkaway --dry-run ~/Projects/Throughline/throughline-app/handoff/build-plan-bpo-j-phase-3.md
 
 STATE & LOGS
+  ~/.walkaway-cli/registry/<feature>.json        Build registry (PIDs from the launch, counters, state)
+  ~/.walkaway-cli/queue/<repo>.txt               Ordered plan paths launched after each merge
   ~/.walkaway-cli/state/watcher-<feature>.json   Watcher PID + metadata
   ~/.walkaway-cli/logs/watcher-<feature>.log     Watcher output
   ~/.walkaway-cli/state/.watcher-state-<feature> Handoff dir snapshot (watcher internal)
 HELP
 }
+
+# ── subcommands ───────────────────────────────────────────────────────────────
+if [[ "${1:-}" == "status" ]]; then
+  registry_status
+  exit 0
+fi
 
 # ── arg parsing ───────────────────────────────────────────────────────────────
 PLAN_FILE=""
@@ -151,6 +162,7 @@ else
 fi
 
 # ── worktree (optional) ───────────────────────────────────────────────────────
+REPO_ROOT="$REPO_PATH"
 if [[ "$USE_WORKTREE" == "true" ]]; then
   worktree_create
 fi
@@ -160,7 +172,22 @@ handoff_dir="${REPO_PATH}/handoff"
 if [[ ! -d "$handoff_dir" && "$DRY_RUN" != "true" ]]; then
   mkdir -p "$handoff_dir"
 fi
+WATCHER_PID=""
+# --force (used by supervisor relaunches) replaces a leftover watcher instead of dying on it.
+if [[ "$FORCE" == "true" && "$DRY_RUN" != "true" ]]; then
+  watcher_stop "$FEATURE_NAME" >/dev/null
+fi
 watcher_start "$handoff_dir" "$FEATURE_NAME" "$DRY_RUN"
+
+# ── registry ─────────────────────────────────────────────────────────────────
+# cc_launch execs the builder in this process, so $$ IS the builder PID.
+if [[ "$DRY_RUN" != "true" ]]; then
+  launch_log=$(lsof -a -p $$ -d 1 -Fn 2>/dev/null | sed -n "s/^n//p" | head -1 || true)
+  registry_register "$FEATURE_NAME" "$REPO_PATH" "$REPO_ROOT" "$PLAN_FILE" "$BRANCH_NAME" "$$" "$WATCHER_PID" "$launch_log"
+  echo "Registered $FEATURE_NAME (builder PID $$, watcher PID ${WATCHER_PID:-none}) → $(registry_file "$FEATURE_NAME")"
+else
+  echo "  [dry-run] would register $FEATURE_NAME in $(registry_file "$FEATURE_NAME")"
+fi
 
 # ── launch CC ────────────────────────────────────────────────────────────────
 cc_launch
