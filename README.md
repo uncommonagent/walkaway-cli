@@ -66,9 +66,11 @@ The operator (`lib/operator.sh`, judgment by headless `claude -p` with `template
 |---|---|
 | DIED / STALLED | kill leftovers, auto RESUME DIRECTIVE in the plan, relaunch (cap 2, then ESCALATE) |
 | STOPPED | triage: approve in-scope, non-PROTECTED fix as a RESUME DIRECTIVE + relaunch, else ESCALATE one question |
-| DONE | merge gate: verify evidence vs acceptance criteria; PASS = squash-merge + launch next queued plan, FAIL = rejection directive + relaunch (cap 2) |
+| DONE | merge gate: verify evidence vs acceptance criteria; PASS (all criteria met, CI green, Codex closed; CI re-verified on the open PR after the gate push) = squash-merge + launch next queued plan, FAIL = rejection directive + relaunch (cap 2) |
 
-Decisions are appended to `handoff/operator-log-<feature>.md` in the build repo and committed. PROTECTED actions (spend, credentials, Audrey's live lists / customer sends, deletion beyond named throwaways, unqueued launches, "Jim decides", any uncertainty) always ESCALATE.
+A worktree build's worktree and branch are removed only after the merge succeeds; a failed merge escalates and leaves the worktree intact. Only `failure-report-<feature>.md` and `failure-report-<feature>-{phase,codex,context}*.md` count as a build's stop.
+
+Decisions are appended to `handoff/operator-log-<feature>.md` in the build repo and committed. The final MERGED outcome goes to `~/.walkaway-cli/logs/operator-<feature>.log`, the registry and ntfy (never an uncommitted write into the repo). PROTECTED actions (spend, credentials, Audrey's live lists / customer sends, deletion beyond named throwaways, unqueued launches, "Jim decides", any uncertainty) always ESCALATE.
 
 Queue: `~/.walkaway-cli/queue/<repo-basename>.txt`, one absolute plan path per line. After a merge the next plan for that repo launches (one builder per repo; repos run in parallel).
 

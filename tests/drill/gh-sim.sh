@@ -6,7 +6,8 @@
 #   gh pr diff <number>                         git diff origin/main...branch
 #   gh pr merge <number> --squash [--delete-branch]   squash-merges into main, pushes, marks MERGED
 #   gh pr create-sim <branch>                   (stub builder) opens a PR with one green check
-# Every call is appended to $GH_SIM_DIR/calls.log.
+# Every call is appended to $GH_SIM_DIR/calls.log. Failure knobs (tests): $GH_SIM_DIR/fail-view makes
+# `pr view` fail like a gh/API error; $GH_SIM_DIR/fail-merge makes `pr merge` fail like a merge conflict.
 
 set -uo pipefail
 
@@ -32,6 +33,7 @@ _find() { # branch or number -> json file
 
 case "$sub" in
   view)
+    [[ -f "$GH_SIM_DIR/fail-view" ]] && { echo "gh-sim: simulated API error" >&2; exit 1; }
     f=$(_find "$arg"); [[ -n "$f" ]] || { echo "no pull requests found for branch \"$arg\"" >&2; exit 1; }
     cat "$f" ;;
   checks)
@@ -49,7 +51,9 @@ case "$sub" in
       > "$dir/${arg//\//__}.json"
     echo "sim://pr/$n" ;;
   merge)
+    [[ -f "$GH_SIM_DIR/fail-merge" ]] && { echo "gh-sim: simulated merge conflict" >&2; exit 1; }
     f=$(_find "$arg"); [[ -n "$f" ]] || { echo "gh-sim: PR $arg not found" >&2; exit 1; }
+    echo "  worktrees at merge: $(git -C "$common" worktree list | wc -l | tr -d ' ')" >> "$GH_SIM_DIR/calls.log"
     b=$(jq -r .headRefName "$f")
     (
       set -e

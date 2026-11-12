@@ -81,6 +81,21 @@ supervisor_checks() {
     | if ($s | index("failed")) then "failed" elif ($s | index("pending")) then "pending" else "green" end' <<< "$1"
 }
 
+# Newest failure report of THIS feature -> "<mtime>\t<path>" (nothing if none). Only the documented names
+# match: failure-report-<feature>.md and failure-report-<feature>-{phase,codex,context}*.md, so a build
+# named demo never consumes failure-report-demo-next-phase-3.md. Shared by classify and operator triage.
+supervisor_failure_report() {
+  local repo="$1" feature="$2" f m best="" bm=0
+  for f in "$repo/handoff/failure-report-$feature.md" \
+           "$repo/handoff/failure-report-$feature"-{phase,codex,context}*.md; do
+    [[ -f "$f" ]] || continue
+    m=$(_mtime "$f")
+    if (( m > bm )); then bm=$m; best=$f; fi
+  done
+  [[ -n "$best" ]] && printf '%s\t%s\n' "$bm" "$best"
+  return 0
+}
+
 # ── classification ───────────────────────────────────────────────────────────
 
 # supervisor_classify <feature>  ->  "<STATE>\t<reason>"
@@ -102,13 +117,10 @@ supervisor_classify() {
   if [[ "$pr_state" == "MERGED" ]]; then printf 'MERGED\tPR #%s merged\n' "$pr_num"; return 0; fi
   if [[ "$state" == "ESCALATED" ]]; then printf 'ESCALATED\twaiting for Jim\n'; return 0; fi
 
-  local fail_m=0 fr fail_name=""
-  for fr in "$repo"/handoff/failure-report-*"$feature"*.md; do
-    [[ -f "$fr" ]] || continue
-    local m; m=$(_mtime "$fr")
-    if (( m > fail_m )); then fail_m=$m; fail_name=$(basename "$fr"); fi
-  done
-  if (( fail_m > launched )); then printf 'STOPPED\t%s\n' "$fail_name"; return 0; fi
+  local fail fail_m=0
+  fail=$(supervisor_failure_report "$repo" "$feature")
+  [[ -n "$fail" ]] && fail_m=${fail%%$'\t'*}
+  if (( fail_m > launched )); then printf 'STOPPED\t%s\n' "$(basename "${fail#*$'\t'}")"; return 0; fi
 
   local report_m
   report_m=$(_mtime "$repo/handoff/build-report-$feature.md")

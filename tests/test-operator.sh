@@ -14,15 +14,17 @@ W=$(mktemp -d)
 export WALKAWAY_HOME="$W/home" GH_SIM_DIR="$W/gh" WALKAWAY_LAUNCH_LOG_DIR="$W/logs"
 export WALKAWAY_BUILDER_CMD="${SCRIPT_DIR}/drill/stub-builder.sh" WALKAWAY_GH_CMD="${SCRIPT_DIR}/drill/gh-sim.sh"
 export WALKAWAY_OPERATOR_CMD="$W/stub-claude" WALKAWAY_NTFY_DISABLED=1 WALKAWAY_CLAUDE_PROJECTS="$W/none"
-export WALKAWAY_MERGE_CHECK_WAIT=30 NTFY_TOPIC=test-topic
+export WALKAWAY_MERGE_CHECK_WAIT=30 WALKAWAY_MERGE_CHECK_POLL=1 NTFY_TOPIC=test-topic
 mkdir -p "$WALKAWAY_HOME/queue" "$WALKAWAY_LAUNCH_LOG_DIR" "$W/decisions"
 touch "$WALKAWAY_HOME/supervisor.enabled"
 
-# claude stub: returns $W/decisions/<feature>.json as structured_output
+# claude stub: returns $W/decisions/<feature>.json as structured_output; runs $W/decisions/<feature>.hook
+# first if present (lets a test change the world mid-gate, e.g. make gh fail after the verdict).
 cat > "$W/stub-claude" <<EOF
 #!/usr/bin/env bash
 feature=\$(printf '%s\n' "\$2" | sed -n 's/^Feature: //p' | head -1)
 echo "\$(date +%T) stub-claude \$feature" >> "$W/stub-claude.log"
+[[ -f "$W/decisions/\$feature.hook" ]] && bash "$W/decisions/\$feature.hook"
 jq -c '{structured_output: .}' "$W/decisions/\$feature.json"
 EOF
 chmod +x "$W/stub-claude"
@@ -37,10 +39,12 @@ reg() { jq -r "$2 // empty" "$WALKAWAY_HOME/registry/$1.json"; }
 ntfy_count() { grep -c "	$1\$" "$WALKAWAY_HOME/logs/ntfy.log" 2>/dev/null || true; }
 tick() { bash "$ROOT/lib/supervisor.sh" tick >> "$W/supervisor.log" 2>&1; }
 wait_operator() { # feature
+  # A relaunch re-registers (operator_pid -> null, last_action "relaunched") before the operator records its
+  # action, so also wait for that interim last_action to be replaced.
   local i p
   for i in $(seq 1 60); do
     p=$(reg "$1" .operator_pid)
-    { [[ -z "$p" ]] || ! kill -0 "$p" 2>/dev/null; } && return 0
+    { [[ -z "$p" ]] || ! kill -0 "$p" 2>/dev/null; } && [[ "$(reg "$1" .last_action)" != "relaunched" ]] && return 0
     sleep 1
   done
 }
@@ -50,6 +54,29 @@ launch() { # repo feature
   for i in $(seq 1 30); do [[ -f "$WALKAWAY_HOME/registry/$2.json" ]] && return 0; sleep 1; done
 }
 kill_builder() { kill "$(reg "$1" .builder_pid)"; sleep 1; }
+PASS_DECISION='{"verdict":"PASS","criteria":[{"id":"AC1","met":true,"evidence":"10/10"}],"ci_green":true,"codex_closed":true,"findings":[],"rows_spot_checked":10}'
+# wt_build <repo-name> <feature>: a DONE worktree build (branch checked out in <repo>-<feature>, PR open +
+# green, untracked builder artifact in the worktree), registered like `walkaway --worktree` does. A real
+# --worktree launch would run npm install and open VS Code, so the worktree is made directly. Echoes the root.
+wt_build() {
+  local root wt bpid
+  root=$(drill_make_repo "$W/repos" "$1" "$2")
+  wt="$W/repos/$1-$2"
+  git -C "$root" worktree add -q "$wt" -b "feature/$2"
+  (
+    cd "$wt" || exit 1
+    printf '# Build report - %s\n' "$2" > "handoff/build-report-$2.md"
+    git add handoff && git commit -qm "$2 build report" && git push -q -u origin "feature/$2"
+    "$WALKAWAY_GH_CMD" pr create-sim "feature/$2" > /dev/null
+  )
+  echo "builder scratch, never committed" > "$wt/handoff/untracked-artifact.txt"
+  sleep 600 > /dev/null 2>&1 &
+  bpid=$!
+  bash -c "source '$ROOT/lib/registry.sh'; registry_register '$2' '$wt' '$root' '$wt/handoff/build-plan-$2.md' 'feature/$2' '$bpid' '' '' true"
+  echo "$root"
+}
+gate() { bash "$ROOT/lib/operator.sh" gate "$1" >> "$W/operator-$1.log" 2>&1; }
+merge_calls() { grep "/$1 gh pr merge" "$GH_SIM_DIR/calls.log" 2>/dev/null; }
 
 cleanup() {
   local f p
@@ -144,12 +171,66 @@ check "t-next registered + alive" kill -0 "$(reg t-next .builder_pid)"
 tick
 check "t-next RUNNING" [ "$(reg t-next .state)" == "RUNNING" ]
 check "t-good stays MERGED, single MERGED ntfy" [ "$(grep -c 't-good: MERGED' "$WALKAWAY_HOME/logs/ntfy.log")" -eq 1 ]
+check "no uncommitted operator-log change in the repo after the merge" \
+  bash -c "[[ -z \$(git -C '$R5' status --porcelain -- handoff/operator-log-t-good.md) ]]"
+check "MERGED outcome in \$WALKAWAY_HOME operator log" grep -q 'MERGED: PR #[0-9]* squash-merged by merge gate. launched next: t-next' "$WALKAWAY_HOME/logs/operator-t-good.log"
+
+# ── T8: PASS with codex_closed:false -> FAIL/rejection, never merged ─────────
+echo "T8 gate PASS without Codex closure"
+R6=$(drill_make_repo "$W/repos" r6 t-codex)
+drill_set_modes "$R6" t-codex complete-good work
+drill_evidence "$R6" good
+jq -c '.codex_closed = false' <<< "$PASS_DECISION" > "$W/decisions/t-codex.json"
+launch "$R6" t-codex
+sleep 7; tick; wait_operator t-codex
+check "downgraded to rejection 1/2 + relaunched" [ "$(reg t-codex .gate_rejections)/$(reg t-codex .launch_count)" == "1/2" ]
+check "rejection directive in plan" grep -q '^## RESUME DIRECTIVE (auto, merge-gate rejection 1/2' "$R6/handoff/build-plan-t-codex.md"
+check "gh pr merge NOT called" bash -c "! grep -q '/r6 gh pr merge' '$GH_SIM_DIR/calls.log'"
+
+# ── T9: gh pr view failing during the post-gate CI wait -> escalate, no merge ─
+echo "T9 CI wait fails closed"
+wt_build r7 t-ghdown > /dev/null
+echo "$PASS_DECISION" > "$W/decisions/t-ghdown.json"
+echo "touch '$GH_SIM_DIR/fail-view'" > "$W/decisions/t-ghdown.hook"
+gate t-ghdown
+rm -f "$GH_SIM_DIR/fail-view"
+check "escalated (checks not verified)" grep -q 't-ghdown: ESCALATED - Merge gate passed for t-ghdown but PR #[0-9]* checks are not green' "$WALKAWAY_HOME/logs/ntfy.log"
+check "gh pr merge NOT called" bash -c "[[ -z \$(grep '/r7 gh pr merge' '$GH_SIM_DIR/calls.log') ]]"
+
+# ── T10: worktree build, gh pr merge fails -> nothing removed, escalation in the worktree ─
+echo "T10 worktree merge failure"
+R8=$(wt_build r8 t-wtfail)
+WT8="$W/repos/r8-t-wtfail"
+echo "$PASS_DECISION" > "$W/decisions/t-wtfail.json"
+touch "$GH_SIM_DIR/fail-merge"
+gate t-wtfail
+rm -f "$GH_SIM_DIR/fail-merge"
+check "merge was attempted" bash -c "[[ -n \$(grep '/r8 gh pr merge' '$GH_SIM_DIR/calls.log') ]]"
+check "worktree still a valid git worktree" git -C "$WT8" rev-parse --git-dir
+check "untracked builder artifact survived" test -f "$WT8/handoff/untracked-artifact.txt"
+check "local + remote branch not deleted" bash -c "git -C '$R8' show-ref -q --verify refs/heads/feature/t-wtfail && [[ -n \$(git -C '$R8' ls-remote --heads origin feature/t-wtfail) ]]"
+check "escalated with the merge error" grep -q 't-wtfail: ESCALATED - gh pr merge failed for t-wtfail PR #[0-9]*: gh-sim: simulated merge conflict' "$WALKAWAY_HOME/logs/ntfy.log"
+check "escalation logged + committed inside the worktree" bash -c "grep -q '^## .* - ESCALATED' '$WT8/handoff/operator-log-t-wtfail.md' && git -C '$WT8' log -1 --format=%s | grep -q 'operator: t-wtfail: escalated'"
+
+# ── T11: worktree build, merge succeeds -> no --delete-branch, prune + branch delete after ─
+echo "T11 worktree merge success"
+R9=$(wt_build r9 t-wtok)
+WT9="$W/repos/r9-t-wtok"
+echo "$PASS_DECISION" > "$W/decisions/t-wtok.json"
+gate t-wtok
+check "t-wtok MERGED" [ "$(reg t-wtok .state)" == "MERGED" ]
+check "merge called without --delete-branch" bash -c "merge=\$(grep '/r9 gh pr merge' '$GH_SIM_DIR/calls.log') && [[ -n \$merge && \$merge != *--delete-branch* ]]"
+check "worktree still present at merge time (pruned after)" bash -c "grep -A1 '/r9 gh pr merge' '$GH_SIM_DIR/calls.log' | grep -q 'worktrees at merge: 2'"
+check "worktree pruned after the merge" bash -c "[[ ! -e '$WT9' ]] && ! git -C '$R9' worktree list | grep -q r9-t-wtok"
+check "remote + local branch deleted" bash -c "[[ -z \$(git -C '$R9' ls-remote --heads origin feature/t-wtok) ]] && ! git -C '$R9' show-ref -q --verify refs/heads/feature/t-wtok"
+check "origin main has the squash commit" bash -c "git -C '$W/repos/r9-origin.git' log main --format=%s | grep -q 'feature/t-wtok'"
+check "repo checkout clean after the merge" bash -c "[[ -z \$(git -C '$R9' status --porcelain) ]]"
 
 # ── T7: walkaway status renders from the registry ────────────────────────────
 echo "T7 status"
 out=$(bash "$ROOT/walkaway.sh" status)
 missing=0
-for f in t-run t-fail t-prot t-bad t-good t-next; do grep -q "^$f " <<< "$out" || missing=1; done
+for f in t-run t-fail t-prot t-bad t-good t-next t-codex t-ghdown t-wtfail t-wtok; do grep -q "^$f " <<< "$out" || missing=1; done
 check "status lists every build" [ "$missing" -eq 0 ]
 
 echo ""

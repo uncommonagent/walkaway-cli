@@ -10,7 +10,8 @@
 # Judgment (triage, gate) comes from `claude -p` with templates/operator-prompt.md as a fixed system
 # prompt and a JSON schema for the decision. Every action (kill, directive, relaunch, merge) is done
 # here in shell, never by the model. Every decision is appended to handoff/operator-log-<feature>.md
-# and committed.
+# and committed (the MERGED outcome, which happens after the checkout is cleaned up, goes to
+# $WALKAWAY_HOME/logs/operator-<feature>.log + registry + ntfy instead).
 
 set -uo pipefail
 
@@ -28,6 +29,7 @@ WALKAWAY_OPERATOR_PROMPT="${WALKAWAY_OPERATOR_PROMPT:-${OP_DIR}/../templates/ope
 WALKAWAY_OPERATOR_TIMEOUT="${WALKAWAY_OPERATOR_TIMEOUT:-2400}"
 WALKAWAY_PROTOCOL_PATH="${WALKAWAY_PROTOCOL_PATH:-$HOME/Projects/BPO/bpo-comp-tool/handoff/WALKAWAY_BUILD_PROTOCOL.md}"
 WALKAWAY_MERGE_CHECK_WAIT="${WALKAWAY_MERGE_CHECK_WAIT:-900}"
+WALKAWAY_MERGE_CHECK_POLL="${WALKAWAY_MERGE_CHECK_POLL:-30}"
 WALKAWAY_LAUNCH_LOG_DIR="${WALKAWAY_LAUNCH_LOG_DIR:-/tmp}"
 RESUME_CAP=2
 REJECTION_CAP=2
@@ -189,13 +191,10 @@ op_resume() {
 }
 
 _newest_failure_report() {
-  local repo f best="" bm=0 m
-  repo=$(_reg .repo)
-  for f in "$repo"/handoff/failure-report-*"$FEATURE"*.md; do
-    [[ -f "$f" ]] || continue
-    m=$(stat -f %m "$f"); (( m > bm )) && { bm=$m; best=$f; }
-  done
-  echo "$best"
+  local r
+  r=$(supervisor_failure_report "$(_reg .repo)" "$FEATURE")
+  [[ -n "$r" ]] && echo "${r#*$'\t'}"
+  return 0
 }
 
 TRIAGE_SCHEMA='{"type":"object","properties":{
@@ -288,17 +287,28 @@ GATE_SCHEMA='{"type":"object","properties":{
 
 _pr_number() { supervisor_pr_json "$(_reg .repo)" "$(_reg .branch)" | jq -r '.number // empty'; }
 
-# Wait for the PR's checks to be green (after the operator-log push re-triggers CI).
+# Wait for the PR's checks to be green (after the operator-log push re-triggers CI). Fails closed: a lookup
+# that does not return this branch's OPEN PR is a lookup failure (gh error -> "{}" would otherwise read as
+# "no checks = green"); 3 in a row -> 1, so the caller escalates instead of merging unverified.
 _wait_checks_green() {
-  local waited=0 c
+  local waited=0 c pr lookup_fails=0
   while (( waited <= WALKAWAY_MERGE_CHECK_WAIT )); do
-    c=$(supervisor_checks "$(supervisor_pr_json "$(_reg .repo)" "$(_reg .branch)")")
-    [[ "$c" == "green" ]] && return 0
-    [[ "$c" == "failed" ]] && return 1
-    sleep 30; waited=$((waited + 30))
+    pr=$(supervisor_pr_json "$(_reg .repo)" "$(_reg .branch)")
+    if [[ "$(jq -r 'if .number != null and .state == "OPEN" then "ok" else "bad" end' <<< "$pr" 2>/dev/null)" != "ok" ]]; then
+      lookup_fails=$((lookup_fails + 1))
+      (( lookup_fails >= 3 )) && return 1
+    else
+      lookup_fails=0
+      c=$(supervisor_checks "$pr")
+      [[ "$c" == "green" ]] && return 0
+      [[ "$c" == "failed" ]] && return 1
+    fi
+    sleep "$WALKAWAY_MERGE_CHECK_POLL"; waited=$((waited + WALKAWAY_MERGE_CHECK_POLL))
   done
   return 1
 }
+
+_is_worktree() { [[ "$(_reg .repo)" != "$(_reg .repo_root)" ]]; }
 
 _prune_worktree() {
   local repo root
@@ -332,7 +342,8 @@ confirm CI green and Codex closed)."
   criteria=$(jq -r '(.criteria // []) | map("- " + .id + ": " + (if .met then "MET" else "NOT MET" end) + " - " + .evidence) | join("\n")' <<< "$decision")
   local unmet
   unmet=$(jq -r '[(.criteria // [])[] | select(.met | not)] | length' <<< "$decision" 2>/dev/null || echo 1)
-  [[ "$verdict" == "PASS" && ( "$unmet" != "0" || "$(jq -r '.ci_green' <<< "$decision")" != "true" ) ]] && verdict="FAIL"
+  [[ "$verdict" == "PASS" && ( "$unmet" != "0" || "$(jq -r '.ci_green' <<< "$decision")" != "true" ||
+       "$(jq -r '.codex_closed' <<< "$decision")" != "true" ) ]] && verdict="FAIL"
   [[ -z "$verdict" ]] && { op_escalate "Merge-gate operator returned no verdict for $FEATURE PR #$pr. Review manually?"; return 0; }
 
   local summary
@@ -354,11 +365,19 @@ $findings"
         return 0
       fi
       _kill_leftovers
-      _prune_worktree
-      local merge_out
-      if ! merge_out=$(cd "$(_reg .repo_root)" && "$WALKAWAY_GH_CMD" pr merge "$pr" --squash --delete-branch 2>&1); then
+      # Nothing is removed before the merge succeeds: a failed merge escalates into the intact checkout.
+      # A worktree build's branch is checked out in the worktree, so gh cannot delete it; we do that after.
+      local merge_out root branch merge_args=(--squash --delete-branch)
+      root=$(_reg .repo_root); branch=$(_reg .branch)
+      _is_worktree && merge_args=(--squash)
+      if ! merge_out=$(cd "$root" && "$WALKAWAY_GH_CMD" pr merge "$pr" "${merge_args[@]}" 2>&1); then
         op_escalate "gh pr merge failed for $FEATURE PR #$pr: $(echo "$merge_out" | tail -1 | cut -c1-160). Merge manually?"
         return 0
+      fi
+      if _is_worktree; then
+        _prune_worktree
+        git -C "$root" push -q origin --delete "$branch" 2>/dev/null || true
+        git -C "$root" branch -q -D "$branch" 2>/dev/null || true
       fi
       op_post_merge "PR #$pr squash-merged by merge gate"
       ;;
@@ -440,13 +459,16 @@ _launch_next() {
   fi
 }
 
+# The MERGED outcome goes to the operator log under $WALKAWAY_HOME, the registry and ntfy only: the build's
+# checkout is gone or back on the default branch (or the next feature's), so nothing is written into a repo.
 op_post_merge() {
   local reason="$1" next
   _kill_leftovers
   _prune_worktree
   _sync_default "$(_reg .repo_root)"
   next=$(_launch_next)
-  _oplog "MERGED" "$reason. ${next:-No queued plan for this repo.}"
+  mkdir -p "${WALKAWAY_HOME}/logs"
+  printf '[%s] MERGED: %s. %s\n' "$(_et)" "$reason" "${next:-No queued plan for this repo.}" >> "${WALKAWAY_HOME}/logs/operator-${FEATURE}.log"
   supervisor_transition "$FEATURE" MERGED "$reason; ${next:-queue empty}"
 }
 
