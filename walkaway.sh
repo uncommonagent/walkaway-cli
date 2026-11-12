@@ -183,7 +183,7 @@ watcher_start "$handoff_dir" "$FEATURE_NAME" "$DRY_RUN"
 # cc_launch execs the builder in this process, so $$ IS the builder PID.
 if [[ "$DRY_RUN" != "true" ]]; then
   launch_log=$(lsof -a -p $$ -d 1 -Fn 2>/dev/null | sed -n "s/^n//p" | head -1 || true)
-  registry_register "$FEATURE_NAME" "$REPO_PATH" "$REPO_ROOT" "$PLAN_FILE" "$BRANCH_NAME" "$$" "$WATCHER_PID" "$launch_log"
+  registry_register "$FEATURE_NAME" "$REPO_PATH" "$REPO_ROOT" "$PLAN_FILE" "$BRANCH_NAME" "$$" "$WATCHER_PID" "$launch_log" "$USE_WORKTREE"
   echo "Registered $FEATURE_NAME (builder PID $$, watcher PID ${WATCHER_PID:-none}) → $(registry_file "$FEATURE_NAME")"
 else
   echo "  [dry-run] would register $FEATURE_NAME in $(registry_file "$FEATURE_NAME")"

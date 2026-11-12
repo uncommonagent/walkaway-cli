@@ -1,3 +1,4 @@
 - Phase 0 prepare: plan mapped to P1-P7, baseline shellcheck -S warning 0, tests 7/7, live builds review-page-v4 + build-supervisor noted
 - Phase 1 registry + walkaway status: shellcheck -S warning 0, parse tests 7/7
 - Phase 2 supervisor state machine + ntfy transitions + heartbeat + lock: shellcheck 0, parse tests 7/7 (Phase 1 sha a583e98)
+- Phase 3 operator (resume/triage/gate/post-merge/escalate) + operator-prompt.md + queue: shellcheck 0, parse tests 7/7 (Phase 2 sha b2543f5)

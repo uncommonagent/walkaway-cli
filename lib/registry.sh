@@ -52,12 +52,12 @@ registry_update() {
   jq "$@" "$filter" "$f" > "$tmp" && mv "$tmp" "$f"
 }
 
-# registry_register <feature> <repo> <repo_root> <plan> <branch> <builder_pid> <watcher_pid> [launch_log]
+# registry_register <feature> <repo> <repo_root> <plan> <branch> <builder_pid> <watcher_pid> [launch_log] [worktree]
 # Creates the entry or refreshes it on relaunch. Counters (resume_count, gate_rejections, approvals)
 # survive relaunches so the supervisor's caps hold across them.
 registry_register() {
   local feature="$1" repo="$2" repo_root="$3" plan="$4" branch="$5" builder_pid="$6" watcher_pid="$7"
-  local launch_log="${8:-}"
+  local launch_log="${8:-}" worktree="${9:-false}"
   local dir f now_iso now_epoch started queue_next=""
   dir=$(registry_dir)
   mkdir -p "$dir"
@@ -79,13 +79,13 @@ registry_register() {
     --arg feature "$feature" --arg repo "$repo" --arg repo_root "$repo_root" --arg plan "$plan" \
     --arg branch "$branch" --arg builder_pid "$builder_pid" --arg builder_started "$started" \
     --arg watcher_pid "$watcher_pid" --arg launched_at "$now_iso" --argjson launched_epoch "$now_epoch" \
-    --arg launch_log "$launch_log" --arg queue_next "$queue_next" '
+    --arg launch_log "$launch_log" --arg queue_next "$queue_next" --argjson worktree "$worktree" '
     def num($s): if $s == "" then null else ($s | tonumber) end;
     $base + {
       feature: $feature, repo: $repo, repo_root: $repo_root, plan: $plan, branch: $branch,
       builder_pid: num($builder_pid), builder_started: $builder_started,
       watcher_pid: num($watcher_pid), launched_at: $launched_at, launched_epoch: $launched_epoch,
-      launch_log: $launch_log,
+      launch_log: $launch_log, worktree: $worktree,
       resume_count: ($base.resume_count // 0), gate_rejections: ($base.gate_rejections // 0),
       approvals: ($base.approvals // 0), launch_count: (($base.launch_count // 0) + 1),
       queue_next: (if $queue_next == "" then null else $queue_next end),
