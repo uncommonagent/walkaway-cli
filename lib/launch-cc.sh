@@ -8,6 +8,7 @@
 #   WALKAWAY_PROTOCOL_PATH (default: ~/Projects/BPO/bpo-comp-tool/handoff/WALKAWAY_BUILD_PROTOCOL.md)
 #   WALKAWAY_TEMPLATE      (default: <this-script-dir>/../templates/block-2-template.md)
 #   DRY_RUN                (true = print prompt, don't exec)
+#   WALKAWAY_BUILDER_CMD   (default: claude; drills point this at a stub builder)
 
 set -euo pipefail
 
@@ -72,7 +73,7 @@ cc_launch() {
   echo ""
 
   # CC runs in foreground so Jim can see and interact with the session.
-  cd "$repo_path" && exec claude --dangerously-skip-permissions "$rendered"
+  cd "$repo_path" && exec "${WALKAWAY_BUILDER_CMD:-claude}" --dangerously-skip-permissions "$rendered"
 }
 
 # If run directly (not sourced), execute immediately

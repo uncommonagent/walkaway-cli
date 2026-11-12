@@ -1,0 +1,7 @@
+# Live GitHub check of the approved-fix-2 head validation (2026-11-12 16:09 ET)
+# supervisor_pr_json on PR #1 (real gh), then the _wait_checks_green verdict for HEAD and HEAD~1
+{"number":1,"state":"OPEN","headRefOid":"4c2c24102588ea10b6f00f140474beed777e0bcb","statusCheckRollup":[]}
+sha 4c2c241: empty
+sha c6e97c4: stale
+supervisor_checks: green
+# gh pr checks 1: no checks reported on the 'feature/build-supervisor' branch (0 workflows, 0 check runs, 0 statuses)

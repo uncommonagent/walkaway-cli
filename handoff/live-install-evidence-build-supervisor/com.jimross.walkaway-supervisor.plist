@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.jimross.walkaway-supervisor</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/jimross/Projects/walkaway-cli/lib/supervisor.sh</string>
+    <string>tick</string>
+  </array>
+  <key>StartInterval</key><integer>120</integer>
+  <key>RunAtLoad</key><true/>
+  <!-- Relaunched builders and detached operator jobs must outlive the tick: by default launchd kills the
+       job's whole process group when the tick exits (nohup does not protect against that). -->
+  <key>AbandonProcessGroup</key><true/>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/Users/jimross/.local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>WALKAWAY_HOME</key><string>/Users/jimross/.walkaway-cli</string>
+  </dict>
+  <key>StandardOutPath</key><string>/Users/jimross/.walkaway-cli/logs/supervisor.log</string>
+  <key>StandardErrorPath</key><string>/Users/jimross/.walkaway-cli/logs/supervisor.log</string>
+</dict>
+</plist>

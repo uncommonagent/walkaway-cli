@@ -1,0 +1,23 @@
+{
+  "feature": "drill-a",
+  "repo": "/Users/jimross/Projects/walkaway-cli/tests/drill/work/repos/drill-ra",
+  "repo_root": "/Users/jimross/Projects/walkaway-cli/tests/drill/work/repos/drill-ra",
+  "plan": "/Users/jimross/Projects/walkaway-cli/tests/drill/work/repos/drill-ra/handoff/build-plan-drill-a.md",
+  "branch": "feature/drill-a",
+  "builder_pid": 19210,
+  "builder_started": "Thu Nov 12 15:28:07 2026",
+  "watcher_pid": 19243,
+  "launched_at": "2026-11-12T20:28:07Z",
+  "launched_epoch": 1794515287,
+  "launch_log": "/Users/jimross/Projects/walkaway-cli/tests/drill/work/logs/walkaway-drill-a-auto-2.log",
+  "worktree": false,
+  "resume_count": 1,
+  "gate_rejections": 0,
+  "approvals": 0,
+  "launch_count": 2,
+  "queue_next": null,
+  "state": "RUNNING",
+  "state_since": 1794515410,
+  "last_action": "auto-resume 1/2 relaunched (builder pid 19210); builder pid 19210, active 0m ago",
+  "operator_pid": null
+}

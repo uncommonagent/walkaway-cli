@@ -1,0 +1,12 @@
+20:26:05	3	drill-a: RUNNING - builder pid 15121, active 0m ago
+20:26:06	3	drill-b: STOPPED - failure-report-drill-b-phase-3.md; operator triage started
+20:26:06	3	drill-c: STOPPED - failure-report-drill-c-phase-3.md; operator triage started
+20:26:06	3	drill-d: DONE - PR #101 checks green; merge gate started
+20:26:07	3	drill-e: DONE - PR #102 checks green; merge gate started
+20:26:21	4	drill-c: ESCALATED - drill-c wants to publish and then delete 10 test rows on Audrey's live "Best of Kitchen" list for smoke evidence, which the plan forbids. Deny it and finish the smoke with only local evidence (rows.json, summary.json, result.png), yes/no?
+20:26:34	3	drill-e: MERGED - PR #102 squash-merged by merge gate; launched next: drill-e2 (builder pid 17871)
+20:28:07	3	drill-a: DIED - builder pid 15121 gone (or recycled), no new report; auto-resume starting
+20:28:09	3	drill-b: RUNNING - approved fix 1, relaunched (builder pid 17444); builder pid 17444, active 0m ago
+20:28:09	3	drill-d: RUNNING - merge-gate rejection 1/2, relaunched (builder pid 18171); builder pid 18171, active 0m ago
+20:28:09	3	drill-e2: RUNNING - builder pid 17871, active 0m ago
+20:30:10	3	drill-a: RUNNING - auto-resume 1/2 relaunched (builder pid 19210); builder pid 19210, active 0m ago
