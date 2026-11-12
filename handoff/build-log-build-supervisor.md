@@ -6,3 +6,4 @@
 - Phase 4 gate fix: SC2045 in adopt.sh (shellcheck slipped into 493d0ba) fixed, shellcheck 0
 - Phase 5 tests: states 12/12 (all 7 states), operator 28/28, parse 7/7, shellcheck 0; fixed relaunch pipe hang + jq false-alternative bug (Phase 4 sha f236b85)
 - Phase 6 smoke: drill a-e PASS (resume 121s, 12/12 ntfy 1:1), live agent installed + adopted builder 11000, status archived, protocol 82d2446 (bpo-comp-tool, unpushed); fixed AbandonProcessGroup + multi-line directive bugs; operator 31/31 (drill sha 716422f)
+- Phase 7 STOPPED: Codex cycle 1 = 2 P1 + 3 P2 (handoff/codex-review-build-supervisor.md); failure-report-build-supervisor-codex.md written with proposed fixes for operator triage (Phase 6 sha 4e6fabc)
