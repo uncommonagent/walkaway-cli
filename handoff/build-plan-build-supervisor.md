@@ -41,7 +41,7 @@ Follow-ups: log the four follow-ups from the failure report's Notes to ROADMAP f
 
 Then continue the plan from the build log: Phase 8, open the PR, wait for CI, write the build report LAST. Do not redo committed phases 0-6. Never merge.
 
-## RESUME DIRECTIVE (auto, approved fix 1, 2026-11-12 15:37 ET) - read first
+## [DONE] RESUME DIRECTIVE (auto, approved fix 1, 2026-11-12 15:37 ET) - read first
 RESUME DIRECTIVE (operator, approved) - build-supervisor, Phase 7 Codex cycle 1
 
 What failed: Codex cycle 1 (HEAD 4e6fabc) found 2 P1 and 3 P2 in lib/operator.sh and lib/supervisor.sh (full text: handoff/codex-review-build-supervisor.md).

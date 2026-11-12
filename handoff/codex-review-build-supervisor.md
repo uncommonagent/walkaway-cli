@@ -48,3 +48,39 @@ Builder verification: all three confirmed against the code (no head-SHA comparis
 Status: OPEN - 2 P1, 1 P2. Codex cap (2 cycles) reached. Build STOPPED per the approved directive ("if cycle 2
 returns any P1, STOP and write a new failure report; do not start cycle 3"):
 failure-report-build-supervisor-codex-cycle-2.md.
+
+## Cycle 2 fixes (3f4538d, approved fix 2)
+Each fix has a regression test in tests/test-operator.sh, run against new tests + new gh-sim. On 3f4af2b lib/ the
+suite scored 57/66 (9 FAIL). After the fix (3f4538d) it scores 66/66.
+
+- [P1] Stale checks: the head was not verified after the gate push.
+  - Fix: `supervisor_pr_json` now requests `headRefOid`. `_wait_checks_green <sha>` takes the SHA from
+    `git rev-parse HEAD` after the push. A lookup counts as valid only with `.number`, `.state == "OPEN"` and
+    `.headRefOid == sha`. A head mismatch means pending (never green) until WALKAWAY_MERGE_CHECK_WAIT runs out,
+    then the operator escalates with the reason. An empty rollup on the matching head stays pending for
+    WALKAWAY_MERGE_EMPTY_CHECKS_GRACE (default 120 s), then counts as green. The rule "3 lookup failures ->
+    escalate" is kept.
+  - Tests:
+    - T12 "gh pr merge called only after the head matched": FAIL on 3f4af2b (it merged on the stale green
+      rollup), PASS now.
+    - T12b "escalated: head never reached the gate commit" + "gh pr merge NOT called": FAIL/FAIL on 3f4af2b,
+      PASS/PASS now.
+    - T13 "merge >= 2s after the first empty-rollup view" (grace 2 s): FAIL on 3f4af2b (merged on the first empty
+      view), PASS now.
+- [P1] Post-merge sync could switch a checkout that an active builder was using.
+  - Fix: one shared helper, `_other_active_build <root> <field>`. `_sync_default` calls it with `.repo`. If another
+    non-MERGED build works in the root checkout, the sync runs only `git fetch -q origin` and logs
+    "default-branch sync deferred: <feature> active in root". There is no checkout and no pull.
+  - `_launch_next` calls the same helper with `.repo_root`, which keeps the plan's one-builder-per-repo rule (that
+    match is a superset of `.repo`), so the queue stays held.
+  - Tests: T14 "root still on the active build's branch at the same HEAD", "no checkout or pull ran in the root
+    (HEAD reflog unchanged)" and "sync deferral logged" were FAIL/FAIL/FAIL on 3f4af2b and PASS now. "queue held"
+    passes on both.
+- [P2] A failed gate push was swallowed.
+  - Fix: `_commit_decision` returns the commit status, and the push is checked. If either fails, the operator
+    escalates with "Merge gate PASS for <f> could not be pushed (<last line>). Push/merge manually?". It does not
+    wait for checks and does not merge.
+  - Tests: T15 (an origin pre-receive hook rejects the push) "escalated: PASS could not be pushed" + "gh pr merge
+    NOT called" were FAIL/FAIL on 3f4af2b and are PASS now.
+
+Cycle-2 status: CLOSED by regression-test evidence (cap 2, no cycle 3, per operator approval)

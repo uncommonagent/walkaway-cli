@@ -1,4 +1,4 @@
-# Phase 7 report - build-supervisor (Codex review) - STOPPED at cycle 2
+# Phase 7 report - build-supervisor (Codex review) - CLOSED (cycle 2 fixed by approved fix 2)
 
 - Cycle 1 (4e6fabc): 2 P1 + 3 P2 -> failure-report-build-supervisor-codex.md -> the LIVE supervisor triaged it with a
   real `claude -p` operator (APPROVE 1/3, 15:37 ET) and relaunched this builder (pid 34230). This is a real-system
@@ -20,3 +20,32 @@
   tests/fixtures/states/other-feature-report-running/{fixture.env,pr.json,handoff/*}, README.md,
   handoff/build-log-build-supervisor.md. Stop commit: handoff/codex-review-build-supervisor.md, this report,
   handoff/failure-report-build-supervisor-codex-cycle-2.md, live-triage evidence, build log.
+
+## Approved fix 2 (operator triage of the cycle-2 report, 15:52 ET) -> 3f4538d
+- The live supervisor's operator approved the cycle-2 failure report (operator commit afd472f, approval 2/3) and
+  relaunched this builder. This is the second real STOPPED -> approve -> relaunch run on the supervisor's own build.
+- Fixes, all in lib/operator.sh and lib/supervisor.sh:
+  - CI wait is bound to the pushed gate commit (`headRefOid`), with an empty-rollup grace window.
+  - The post-merge sync is deferred while another build is active in the root checkout. It uses the shared
+    `_other_active_build` helper.
+  - A gate commit or push failure now escalates instead of merging.
+- gh-sim: reports `headRefOid` from the origin branch tip, adds `stale-head` / `empty-checks` knobs and epoch
+  timestamps in calls.log, and squash-merges in a temp clone of origin. The old version did `git checkout main` in
+  the root checkout, which hid the P1-2 scenario. The new one only touches a local checkout under
+  `--delete-branch`, the way gh does.
+- Regression tests T12, T12b, T13, T14 and T15 (16 checks; 9 FAIL on 3f4af2b lib/, all PASS now).
+- Gates at 3f4538d:
+  - shellcheck -S warning: rc=0, combined and per file. Checking per file exposed 2 pre-existing SC2034 (unused
+    loop vars in tests/test-operator.sh) that the combined run masked; both fixed.
+  - parse 7/7, states 13/13, operator 66/66.
+- Not re-run: the AC2 live drill (tests/drill/run-drill.sh). It installs a second launchd agent, makes real
+  `claude -p` calls and ntfy pushes, and rewrites the committed Phase 6 evidence. The only drill-relevant change is
+  gh-sim's merge implementation. Both merge forms the drill uses (non-worktree `--delete-branch` + queue launch,
+  and worktree) are exercised by T6 and T11, which pass.
+- Codex closure: "Cycle 2 fixes" section added to handoff/codex-review-build-supervisor.md. Cycle-2 status: CLOSED
+  by regression-test evidence (cap 2, no cycle 3).
+- Follow-ups (not built) logged to ROADMAP.md: watcher substring glob, bpo-j prefix ambiguity, protocol
+  report-name doc, relaunch-label ntfy race.
+- Files: lib/operator.sh, lib/supervisor.sh, tests/drill/gh-sim.sh, tests/test-operator.sh, ROADMAP.md (new),
+  handoff/codex-review-build-supervisor.md, handoff/build-plan-build-supervisor.md (fix-1 directive marked [DONE]),
+  this report, handoff/build-log-build-supervisor.md.
