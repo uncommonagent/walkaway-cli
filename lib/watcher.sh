@@ -18,6 +18,11 @@ NTFY_TOPIC="${NTFY_TOPIC:-jim-throughline-9k2x7q-builds}"
 # ── internal: notification helper ─────────────────────────────────────────────
 _watcher_notify() {
   local title="$1" body="$2" priority="${3:-default}"
+  # The supervisor (install-supervisor.sh) owns notifications while installed: one ntfy per state change.
+  if [[ -f "${WALKAWAY_HOME}/supervisor.enabled" ]]; then
+    echo "[$(date +%H:%M:%S)] suppressed (supervisor active): $title"
+    return 0
+  fi
   curl -s \
     -H "Title: $title" \
     -H "Priority: $priority" \

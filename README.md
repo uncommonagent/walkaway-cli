@@ -43,6 +43,35 @@ walkaway --dry-run ~/Projects/Throughline/throughline-app/handoff/build-plan-bpo
 
 Prints what would happen — plan parse results, branch name, watcher path, and a prompt preview — without touching anything.
 
+### Status
+
+```bash
+walkaway status
+```
+
+One table from the build registry: feature, repo, state, age, time in state, last action, plus the supervisor's last tick. Use this for status checks instead of `ps | grep`.
+
+## Supervisor (launchd, every 2 min)
+
+```bash
+./install-supervisor.sh              # install + load com.jimross.walkaway-supervisor, adopt running builds
+./install-supervisor.sh --uninstall  # unload + remove
+```
+
+Every `walkaway` launch writes `~/.walkaway-cli/registry/<feature>.json` (builder PID = the walkaway process that execs the builder, watcher PID from the launch; never name-matched). The supervisor (`lib/supervisor.sh tick`) classifies each registered build as RUNNING, STALLED (alive, 40 min idle), STOPPED (failure report newer than last launch), DIED (PID gone, no new report), DONE (build report + PR open + checks green), MERGED or ESCALATED, and sends one ntfy line `<feature>: <STATE> - <action>` on every change (plus a 09/13/17 ET heartbeat while anything is RUNNING/ESCALATED). While it is installed, watchers no longer ping on their own.
+
+The operator (`lib/operator.sh`, judgment by headless `claude -p` with `templates/operator-prompt.md`) acts on it:
+
+| State | Action |
+|---|---|
+| DIED / STALLED | kill leftovers, auto RESUME DIRECTIVE in the plan, relaunch (cap 2, then ESCALATE) |
+| STOPPED | triage: approve in-scope, non-PROTECTED fix as a RESUME DIRECTIVE + relaunch, else ESCALATE one question |
+| DONE | merge gate: verify evidence vs acceptance criteria; PASS = squash-merge + launch next queued plan, FAIL = rejection directive + relaunch (cap 2) |
+
+Decisions are appended to `handoff/operator-log-<feature>.md` in the build repo and committed. PROTECTED actions (spend, credentials, Audrey's live lists / customer sends, deletion beyond named throwaways, unqueued launches, "Jim decides", any uncertainty) always ESCALATE.
+
+Queue: `~/.walkaway-cli/queue/<repo-basename>.txt`, one absolute plan path per line. After a merge the next plan for that repo launches (one builder per repo; repos run in parallel).
+
 ## Flags
 
 | Flag | Description |
@@ -58,6 +87,8 @@ Prints what would happen — plan parse results, branch name, watcher path, and 
 |---|---|---|
 | `WALKAWAY_PROTOCOL_PATH` | `~/Projects/BPO/bpo-comp-tool/handoff/WALKAWAY_BUILD_PROTOCOL.md` | Override protocol path |
 | `NTFY_TOPIC` | `jim-throughline-9k2x7q-builds` | ntfy.sh topic |
+| `WALKAWAY_HOME` | `~/.walkaway-cli` | Registry/queue/state/log root (drills use a scratch one) |
+| `WALKAWAY_BUILDER_CMD` | `claude` | Builder binary (drills use a stub) |
 
 ## Block 2 template
 
@@ -81,6 +112,11 @@ Edit this file to adjust the wrapper text. Variables substituted at runtime:
 ~/.walkaway-cli/state/watcher-<feature>.json   Watcher PID + metadata
 ~/.walkaway-cli/logs/watcher-<feature>.log     Watcher output
 ~/.walkaway-cli/state/.watcher-state-<feature> Handoff dir file snapshot
+~/.walkaway-cli/registry/<feature>.json        Build registry (supervisor state)
+~/.walkaway-cli/queue/<repo>.txt               Plans launched after each merge
+~/.walkaway-cli/logs/supervisor.log            Supervisor ticks
+~/.walkaway-cli/logs/operator-<feature>.log    Operator jobs
+~/.walkaway-cli/logs/ntfy.log                  Every ntfy line sent
 ```
 
 ## Plan format requirements

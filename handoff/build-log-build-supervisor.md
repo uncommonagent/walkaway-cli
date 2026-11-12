@@ -2,3 +2,4 @@
 - Phase 1 registry + walkaway status: shellcheck -S warning 0, parse tests 7/7
 - Phase 2 supervisor state machine + ntfy transitions + heartbeat + lock: shellcheck 0, parse tests 7/7 (Phase 1 sha a583e98)
 - Phase 3 operator (resume/triage/gate/post-merge/escalate) + operator-prompt.md + queue: shellcheck 0, parse tests 7/7 (Phase 2 sha b2543f5)
+- Phase 4 launchd installer + adoption backfill + watcher suppression: shellcheck 0, parse tests 7/7, sandbox adopt 2/2 live builds (Phase 3 sha 7942f50)
