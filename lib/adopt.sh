@@ -20,9 +20,8 @@ _lstart_epoch() { date -j -f '%a %b %d %T %Y' "$1" +%s 2>/dev/null; }
 
 adopt_all() {
   local log adopted=0 skipped=0
-  # Newest logs first so a feature's latest launch wins.
-  # shellcheck disable=SC2086  # the glob must expand
-  for log in $(ls -t $WALKAWAY_LAUNCH_LOG_GLOB 2>/dev/null); do
+  # Newest logs first so a feature's latest launch wins (launch log names never contain spaces).
+  while IFS= read -r log; do
     local plan feature branch repo wpid worktree_path
     plan=$(sed -n 's/^Parsing build plan: //p' "$log" | head -1)
     feature=$(sed -n 's/^  Feature: *//p' "$log" | head -1)
@@ -60,7 +59,8 @@ adopt_all() {
       --arg e "${epoch:-$(date +%s)}" --arg a "adopted from $(basename "$log")"
     echo "adopted $feature: builder $bpid (started $started), watcher $wpid, repo $build_repo, log $log"
     adopted=$((adopted + 1))
-  done
+  done < <(# shellcheck disable=SC2086  # the glob must expand
+           ls -t $WALKAWAY_LAUNCH_LOG_GLOB 2>/dev/null)
   echo "adopt: $adopted adopted, $skipped logs skipped"
 }
 
