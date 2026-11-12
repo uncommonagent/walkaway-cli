@@ -46,3 +46,47 @@ Then run Codex cycle 2 (`codex review --base main`). It is the FINAL cycle (cap 
 - If cycle 2 returns any P1, STOP and write a new failure report. Do not start cycle 3.
 
 Then continue the plan from the build log: Phase 8, open the PR, wait for CI, write the build report LAST. Do not redo committed phases 0-6. Never merge.
+
+## 2026-11-12 15:52 ET - TRIAGE: APPROVE (2/3)
+Report: /Users/jimross/Projects/walkaway-cli/handoff/failure-report-build-supervisor-codex-cycle-2.md
+Rationale: Codex cycle 2 found two P1s and one P2, all in the merge path of lib/operator.sh (plan item 3: the merge gate and post-merge steps). The builder confirmed each one against the code. Protocol line 498 says P1s go to the operator and that there is no cycle 3, so option (a) is the protocol path: fix the findings, prove each fix with a test that fails before it and passes after, and close by that test evidence. Every fix makes the gate stricter: checks must match the pushed head, there is an empty-rollup grace window, the root checkout is not switched while a build is active there, and a failed push escalates. None of them weakens a gate or touches a protected action. This is consistent with approved fix 1.
+Directive written to the plan:
+RESUME DIRECTIVE (operator, approved) - build-supervisor, Phase 7 Codex cycle 2 (FINAL)
+
+What failed: Codex cycle 2 (HEAD 3f4af2b) found 2 P1 and 1 P2 in the lib/operator.sh merge path: stale-check green, post-merge sync while a builder is active in the root checkout, and a swallowed gate push failure. Full text: handoff/codex-review-build-supervisor.md.
+
+Apply the fixes as proposed in handoff/failure-report-build-supervisor-codex-cycle-2.md:
+1. P1, stale checks (lib/supervisor.sh supervisor_pr_json + lib/operator.sh _wait_checks_green):
+   - Add headRefOid to the `gh pr view --json` fields.
+   - After the gate push, record sha=$(git -C <repo> rev-parse HEAD).
+   - A lookup is valid only if .number is set, .state == "OPEN" and .headRefOid == sha.
+   - A head mismatch means pending. Keep polling until WALKAWAY_MERGE_CHECK_WAIT runs out, then escalate with no merge. A head mismatch is not a lookup failure.
+   - An empty rollup on the matching head stays pending for WALKAWAY_MERGE_EMPTY_CHECKS_GRACE (default 120 s), then counts as green.
+   - The existing fail-closed lookup-failure rule stays: 3 consecutive failures -> escalate.
+   - tests/drill/gh-sim.sh returns headRefOid from the pushed branch tip.
+2. P1, post-merge sync under an active builder (op_post_merge / _sync_default / _launch_next):
+   - Add one shared helper that finds another registered, non-MERGED build whose .repo == repo_root. Use it in both _sync_default and _launch_next.
+   - If such a build exists, run only `git -C <root> fetch -q origin` and log "default-branch sync deferred: <feature> active in root". No checkout, no pull. The queue stays held.
+3. P2, gate push failure (op_gate PASS branch):
+   - _commit_decision returns success or failure.
+   - Replace `git push ... || true` with a checked push.
+   - If the commit or the push fails: op_escalate "Merge gate PASS for <f> could not be pushed (<last line>). Push/merge manually?". Do not wait for checks and do not run gh pr merge.
+
+Regression tests in tests/test-operator.sh. Each must fail on 3f4af2b and pass after the fix. Record the fail-then-pass result in the build log.
+- gh-sim reports the old head with a green rollup after the gate push -> no merge until the head matches. If the head never matches -> escalate, no merge.
+- Empty rollup on the matching head -> merge only after the grace window (set the grace to 2 s in the test).
+- A worktree build merges while another registered build is running in the root checkout -> the root's branch and HEAD are unchanged, no checkout or pull ran, and the queue is held.
+- The gate push fails (origin made unwritable or a pre-push hook rejects it) -> escalate, gh pr merge not called.
+
+Re-run every gate:
+- `shellcheck -S warning` on all scripts: must be 0.
+- tests parse 7/7, states 13/13 and operator: all green, with the new count.
+- Commit with a "Phase 7 fix: Codex cycle 2 P1/P2s (approved fix 2)" message and append a build-log line.
+
+Codex closure (no cycle 3, cap reached):
+- Append "## Cycle 2 fixes (<sha>, approved fix 2)" to handoff/codex-review-build-supervisor.md. List each finding -> fix -> the regression test name with its fail-on-3f4af2b / pass-now result.
+- Set "Cycle-2 status: CLOSED by regression-test evidence (cap 2, no cycle 3, per operator approval)".
+
+Follow-ups: log the four follow-ups from the failure report's Notes to ROADMAP follow-ups (protocol: remaining items after cycle 2 go to ROADMAP). They are: the lib/watcher.sh:74 substring glob, the bpo-j naming ambiguity, the protocol line 457 report-name doc, and the ntfy relaunch-label race. Do not build them.
+
+Then continue the plan from the build log: Phase 8, open the PR, wait for CI, write the build report LAST. Do not redo committed phases 0-6. Never merge.
