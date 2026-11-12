@@ -1,0 +1,65 @@
+gui/501/com.jimross.walkaway-supervisor = {
+	active count = 0
+	path = /Users/jimross/Library/LaunchAgents/com.jimross.walkaway-supervisor.plist
+	type = LaunchAgent
+	state = not running
+
+	program = /bin/bash
+	arguments = {
+		/bin/bash
+		/Users/jimross/Projects/walkaway-cli/lib/supervisor.sh
+		tick
+	}
+
+	stdout path = /Users/jimross/.walkaway-cli/logs/supervisor.log
+	stderr path = /Users/jimross/.walkaway-cli/logs/supervisor.log
+	inherited environment = {
+		SSH_AUTH_SOCK => /var/run/com.apple.launchd.M9TYAUruHl/Listeners
+	}
+
+	default environment = {
+		PATH => /usr/bin:/bin:/usr/sbin:/sbin
+	}
+
+	environment = {
+		OSLogRateLimit => 64
+		PATH => /opt/homebrew/bin:/usr/local/bin:/Users/jimross/.local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+		WALKAWAY_HOME => /Users/jimross/.walkaway-cli
+		XPC_SERVICE_NAME => com.jimross.walkaway-supervisor
+	}
+
+	domain = gui/501 [100002]
+	asid = 100002
+	minimum runtime = 10
+	exit timeout = 5
+	runs = 1
+	last exit code = 0
+
+	resource coalition = {
+		ID = 5509
+		type = resource
+		state = active
+		active count = 1
+		name = com.jimross.walkaway-supervisor
+	}
+
+	jetsam coalition = {
+		ID = 5510
+		type = jetsam
+		state = active
+		active count = 1
+		name = com.jimross.walkaway-supervisor
+	}
+
+	spawn type = daemon (3)
+	jetsam priority = 40
+	jetsam memory limit (active) = (unlimited)
+	jetsam memory limit (inactive) = (unlimited)
+	jetsamproperties category = daemon
+	jetsam thread limit = 32
+	cpumon = default
+	run interval = 120 seconds
+	sanitizer flags = 0x0
+
+	properties = runatload | abandon process group | inferred program
+}

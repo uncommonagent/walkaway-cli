@@ -1,0 +1,4 @@
+$ walkaway status   # 2026-11-12 15:33:43 EST
+supervisor last tick: 2026-11-12 15:33:32 EST
+FEATURE           REPO          STATE    AGE    IN-STATE  LAST ACTION
+build-supervisor  walkaway-cli  RUNNING  1h10m  0m        builder pid 11000, active 0m ago
