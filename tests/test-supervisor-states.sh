@@ -6,6 +6,9 @@
 #   PID        alive | dead | recycled   (recycled = live PID whose start time does not match the registry)
 #   REG_STATE  state already in the registry
 #   TOUCH      "<file>:<minutes relative to now>" mtimes to set; the build was launched 60 min ago
+#   COMMIT     "<file>:<minutes>" files committed on feature/demo at that time, in order (the repo is a git repo;
+#              everything else stays untracked). A build report counts only when committed at the branch head.
+#   LAUNCHED   launch time in minutes (default -60); BASELINE optional .report_baseline in minutes (a resume)
 # Exit 0 = all pass.
 
 set -uo pipefail
@@ -42,7 +45,7 @@ _touch_rel() { # file minutes
 for dir in "$FIXTURES"/*/; do
   name=$(basename "$dir")
   # shellcheck disable=SC1091
-  EXPECT="" PID="" REG_STATE="" TOUCH=""
+  EXPECT="" PID="" REG_STATE="" TOUCH="" COMMIT="" LAUNCHED=-60 BASELINE=""
   # shellcheck source=/dev/null
   source "$dir/fixture.env"
 
@@ -54,17 +57,26 @@ for dir in "$FIXTURES"/*/; do
   # Default every fixture file to "before launch", then apply the case's mtimes.
   find "$repo/handoff" -type f -exec touch -t "$(date -v-120M +%Y%m%d%H%M.%S)" {} +
   for t in $TOUCH; do _touch_rel "$repo/${t%%:*}" "${t##*:}"; done
+  git -C "$repo" init -q -b feature/demo
+  for t in $COMMIT; do
+    cd_date=$(date -v"${t##*:}"M '+%Y-%m-%dT%H:%M:%S')
+    git -C "$repo" add -f "${t%%:*}"
+    GIT_AUTHOR_DATE="$cd_date" GIT_COMMITTER_DATE="$cd_date" \
+      git -C "$repo" -c user.name=fixture -c user.email=fixture@example.invalid commit -qm "fixture: ${t%%:*}"
+  done
 
   case "$PID" in
     alive)    pid=$ALIVE_PID; started=$(ps -o lstart= -p "$ALIVE_PID" | sed 's/^ *//;s/ *$//') ;;
     dead)     pid=$DEAD_PID;  started="Thu Jan  1 00:00:00 2026" ;;
     recycled) pid=$ALIVE_PID; started="Thu Jan  1 00:00:00 2026" ;;
   esac
-  launched=$(date -v-60M +%s)
+  launched=$(date -v"${LAUNCHED}"M +%s)
+  baseline=null; [[ -n "$BASELINE" ]] && baseline=$(date -v"${BASELINE}"M +%s)
   jq -n --arg repo "$repo" --argjson pid "$pid" --arg started "$started" --argjson launched "$launched" \
+    --argjson baseline "$baseline" \
     --arg state "$REG_STATE" '{feature:"demo", repo:$repo, repo_root:$repo, plan:($repo+"/handoff/build-plan-demo.md"),
       branch:"feature/demo", builder_pid:$pid, builder_started:$started, watcher_pid:null,
-      launched_epoch:$launched, state:$state, launch_count:1}' > "$home/registry/demo.json"
+      launched_epoch:$launched, report_baseline:$baseline, state:$state, launch_count:1}' > "$home/registry/demo.json"
 
   got=$(WALKAWAY_HOME="$home" WALKAWAY_GH_CMD="$WORK/bin/gh" FIXTURE_PR_JSON="$dir/pr.json" \
         WALKAWAY_CLAUDE_PROJECTS="$WORK/no-transcripts" bash "$SUP" classify demo)

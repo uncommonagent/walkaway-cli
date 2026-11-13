@@ -54,7 +54,8 @@ registry_update() {
 
 # registry_register <feature> <repo> <repo_root> <plan> <branch> <builder_pid> <watcher_pid> [launch_log] [worktree]
 # Creates the entry or refreshes it on relaunch. Counters (resume_count, gate_rejections, approvals)
-# survive relaunches so the supervisor's caps hold across them.
+# survive relaunches so the supervisor's caps hold across them. report_baseline is cleared on every launch;
+# an auto-resume sets it back to the pre-resume baseline (a resume never invalidates a committed report).
 registry_register() {
   local feature="$1" repo="$2" repo_root="$3" plan="$4" branch="$5" builder_pid="$6" watcher_pid="$7"
   local launch_log="${8:-}" worktree="${9:-false}"
@@ -91,7 +92,7 @@ registry_register() {
       queue_next: (if $queue_next == "" then null else $queue_next end),
       state: "LAUNCHED", state_since: $launched_epoch,
       last_action: (if ($base.launch_count // 0) == 0 then "launched" else "relaunched" end),
-      operator_pid: null
+      operator_pid: null, report_baseline: null
     }' > "$tmp" && mv "$tmp" "$f"
 }
 

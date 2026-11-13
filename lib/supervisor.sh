@@ -18,6 +18,7 @@ source "${SUP_DIR}/registry.sh"
 source "${SUP_DIR}/notify.sh"
 
 WALKAWAY_STALL_SECS="${WALKAWAY_STALL_SECS:-2400}"          # 40 min without activity = STALLED
+WALKAWAY_DIED_GRACE_SECS="${WALKAWAY_DIED_GRACE_SECS:-180}"  # PID gone but active < 3 min ago = still exiting, not DIED
 WALKAWAY_GH_CMD="${WALKAWAY_GH_CMD:-gh}"
 WALKAWAY_HEARTBEAT_HOURS="${WALKAWAY_HEARTBEAT_HOURS:-09 13 17}"
 WALKAWAY_CLAUDE_PROJECTS="${WALKAWAY_CLAUDE_PROJECTS:-$HOME/.claude/projects}"
@@ -96,6 +97,22 @@ supervisor_failure_report() {
   return 0
 }
 
+# Commit epoch of the build report at the branch head: the newest commit on <branch> that touched
+# handoff/build-report-<feature>.md, provided the file exists in the branch tip (0 otherwise). An uncommitted
+# report never counts: a builder that dies before committing it is resumed to finish the commit.
+supervisor_report_commit() {
+  local repo="$1" branch="$2" feature="$3" path c
+  path="handoff/build-report-$feature.md"
+  git -C "$repo" cat-file -e "$branch:$path" 2>/dev/null || { echo 0; return 0; }
+  c=$(git -C "$repo" log -1 --format=%ct "$branch" -- "$path" 2>/dev/null)
+  echo "${c:-0}"
+}
+
+# True when the plan says the build opens no PR yet (then a committed build report alone is DONE).
+supervisor_plan_no_pr() {
+  [[ -f "$1" ]] && grep -qiE 'no PR yet|do not open a PR|PR: none' "$1"
+}
+
 # ── classification ───────────────────────────────────────────────────────────
 
 # supervisor_classify <feature>  ->  "<STATE>\t<reason>"
@@ -122,21 +139,38 @@ supervisor_classify() {
   [[ -n "$fail" ]] && fail_m=${fail%%$'\t'*}
   if (( fail_m > launched )); then printf 'STOPPED\t%s\n' "$(basename "${fail#*$'\t'}")"; return 0; fi
 
-  local report_m
-  report_m=$(_mtime "$repo/handoff/build-report-$feature.md")
-  if (( report_m > launched )); then
-    checks=$( [[ "$pr_state" == "OPEN" ]] && supervisor_checks "$pr" || echo none)
-    if [[ "$checks" == "green" ]]; then printf 'DONE\tPR #%s checks green\n' "$pr_num"; return 0; fi
-    if [[ "$checks" == "failed" ]]; then printf 'STOPPED\tci-failed on PR #%s after build report\n' "$pr_num"; return 0; fi
-    # pending CI or no PR yet: fall through to liveness
+  # DONE first (11/13 bf-deals-ingest-fix: a builder that committed its report and exited read as DIED because
+  # CI was still pending, then every resume moved launched_epoch past the report). A build report committed at
+  # the branch head since the report baseline is DONE whether or not the builder is still alive. The baseline
+  # is the last launch that was NOT an auto-resume (.report_baseline), so a resume never invalidates a report.
+  local report_c baseline plan
+  baseline=$(jq -r '.report_baseline // .launched_epoch // 0' "$f"); plan=$(jq -r '.plan // ""' "$f")
+  report_c=$(supervisor_report_commit "$repo" "$branch" "$feature")
+  if (( report_c > 0 && report_c >= baseline )); then
+    if [[ "$pr_state" == "OPEN" ]]; then
+      checks=$(supervisor_checks "$pr")
+      case "$checks" in
+        green)  printf 'DONE\tPR #%s checks green\n' "$pr_num"; return 0 ;;
+        failed) printf 'STOPPED\tci-failed on PR #%s after build report\n' "$pr_num"; return 0 ;;
+        *)      printf 'DONE\tPR #%s checks pending\n' "$pr_num"; return 0 ;;
+      esac
+    fi
+    if supervisor_plan_no_pr "$plan"; then printf 'DONE\tno PR (plan says no PR yet)\n'; return 0; fi
+    if ! pid_alive "$pid" "$started"; then printf 'STOPPED\tbuild report at branch head but no open PR\n'; return 0; fi
   fi
-
-  if ! pid_alive "$pid" "$started"; then printf 'DIED\tbuilder pid %s gone (or recycled), no new report\n' "$pid"; return 0; fi
 
   local act now idle
   act=$(supervisor_activity "$repo" "$branch"); now=$(date +%s)
   (( act < launched )) && act=$launched
   idle=$(( now - act ))
+  if ! pid_alive "$pid" "$started"; then
+    # DIED needs all three: PID gone, no build report at the branch head (above), and quiet past the grace.
+    if (( idle < WALKAWAY_DIED_GRACE_SECS )); then
+      printf 'RUNNING\tbuilder pid %s exited %ss after last activity (grace %ss)\n' "$pid" "$idle" "$WALKAWAY_DIED_GRACE_SECS"; return 0
+    fi
+    printf 'DIED\tbuilder pid %s gone (or recycled), no build report at branch head, quiet %sm\n' "$pid" "$(( idle / 60 ))"; return 0
+  fi
+
   if (( idle >= WALKAWAY_STALL_SECS )); then printf 'STALLED\tno activity %sm\n' "$(( idle / 60 ))"; return 0; fi
   printf 'RUNNING\tbuilder pid %s, active %sm ago\n' "$pid" "$(( idle / 60 ))"
 }
@@ -177,6 +211,20 @@ _operator_spawn() {
   echo "$opid"
 }
 
+# DONE: the merge gate starts only on green checks (the gate itself re-verifies CI). Pending CI or a plan with
+# no PR yet records DONE (one ntfy on entry) and waits; nothing resumes or relaunches a finished builder.
+_handle_done() {
+  local feature="$1" reason="$2"
+  if [[ "$reason" == *"checks green"* ]]; then
+    supervisor_transition "$feature" DONE "$reason; merge gate started"
+    _operator_spawn "$feature" gate > /dev/null
+  elif [[ "$reason" == *"checks pending"* ]]; then
+    supervisor_transition "$feature" DONE "$reason; merge gate waits for green CI"
+  else
+    supervisor_transition "$feature" DONE "$reason; nothing to merge"
+  fi
+}
+
 # Act on one build. Synchronous for DIED/STALLED/MERGED (fast, deterministic); detached operator for
 # STOPPED (triage) and DONE (merge gate).
 supervisor_handle() {
@@ -199,6 +247,8 @@ supervisor_handle() {
     return 0
   fi
 
+  # DONE is acted on per tick: the gate starts once the checks turn green, even if DONE was already recorded.
+  [[ "$new" == "DONE" ]] && { _handle_done "$feature" "$reason"; return 0; }
   [[ "$new" == "$old" ]] && { registry_update "$feature" '.last_action = $a' --arg a "$reason"; return 0; }
 
   case "$new" in
@@ -218,10 +268,7 @@ supervisor_handle() {
       supervisor_transition "$feature" STOPPED "$reason; operator triage started"
       _operator_spawn "$feature" triage > /dev/null
       ;;
-    DONE)
-      supervisor_transition "$feature" DONE "$reason; merge gate started"
-      _operator_spawn "$feature" gate > /dev/null
-      ;;
+    DONE) _handle_done "$feature" "$reason" ;;
     MERGED)
       bash "${SUP_DIR}/operator.sh" post-merge "$feature" "$reason"
       ;;
