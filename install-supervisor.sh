@@ -3,6 +3,7 @@
 #
 #   ./install-supervisor.sh              install + load, adopt running builds, first tick
 #   ./install-supervisor.sh --uninstall  unload + remove (watchers resume their own ntfy pings)
+#   ./install-supervisor.sh --jobs-on    start watching the scheduled jobs in jobs.yaml (--jobs-off stops)
 #
 # Drills: WALKAWAY_SUPERVISOR_LABEL, WALKAWAY_HOME, WALKAWAY_LAUNCH_LOG_GLOB and WALKAWAY_EXTRA_ENV_XML
 # (<key>/<string> pairs for the agent's environment) point a second agent at a scratch world.
@@ -18,9 +19,21 @@ WALKAWAY_HOME="${WALKAWAY_HOME:-$HOME/.walkaway-cli}"
 PLIST="${HOME}/Library/LaunchAgents/${LABEL}.plist"
 DOMAIN="gui/$(id -u)"
 
+# Job watching (jobs.yaml) is a flag file the running supervisor reads every tick: no reinstall needed.
+if [[ "${1:-}" == "--jobs-on" ]]; then
+  mkdir -p "$WALKAWAY_HOME"; touch "${WALKAWAY_HOME}/jobs.enabled"
+  echo "Job watching ON (${WALKAWAY_HOME}/jobs.enabled); next supervisor tick checks jobs.yaml."
+  exit 0
+fi
+if [[ "${1:-}" == "--jobs-off" ]]; then
+  rm -f "${WALKAWAY_HOME}/jobs.enabled"
+  echo "Job watching OFF."
+  exit 0
+fi
+
 if [[ "${1:-}" == "--uninstall" ]]; then
   launchctl bootout "$DOMAIN/$LABEL" 2>/dev/null || true
-  rm -f "$PLIST" "${WALKAWAY_HOME}/supervisor.enabled"
+  rm -f "$PLIST" "${WALKAWAY_HOME}/supervisor.enabled" "${WALKAWAY_HOME}/jobs.enabled"
   echo "Supervisor unloaded and removed."
   exit 0
 fi

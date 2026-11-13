@@ -2,3 +2,4 @@
 *.log
 *.pid
 tests/drill/work/
+tests/drill/work-jobs/
