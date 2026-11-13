@@ -1,0 +1,1 @@
+- Phase 0 prepare: plan mapped to P1-P7, baseline shellcheck 0 / parse 7/7 / states 13/13 / operator 66/66, 8 jobs confirmed on real rows (5 timing deviations backed by evidence; cc-optin-pm disabled), live supervisor runs from this tree (edit-in-scratch rule)
