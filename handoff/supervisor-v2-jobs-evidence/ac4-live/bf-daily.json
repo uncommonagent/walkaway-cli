@@ -1,0 +1,13 @@
+{
+  "job": "bf-daily",
+  "date": "2026-11-13",
+  "state": "OK",
+  "since": 1794590053,
+  "last_action": "2026-11-13T14:21:05Z BF lists daily 11/13: OK | deals 15000 (31435 live) from dealshub | drafts 1/1 | curations early_bf 0 ops ok, gift_guides 0 ops ok",
+  "last_verdict": "ok",
+  "last_detail": "2026-11-13T14:21:05Z BF lists daily 11/13: OK | deals 15000 (31435 live) from dealshub | drafts 1/1 | curations early_bf 0 ops ok, gift_guides 0 ops ok",
+  "checked_at": 1794590052,
+  "error_ticks": 0,
+  "last_ok_at": 1794590052,
+  "last_ok_date": "2026-11-13"
+}

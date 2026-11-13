@@ -1,0 +1,54 @@
+worktree at 4d5c8e2 Phase 6: archive .log evidence files (ignored by *.log); tests/test-job-operator.sh copied from the fix
+J1 FAILED bf-daily, repo free -> incident + template-v2 plan + fix build launched (FIXING)
+  PASS: incident records false flags as false (not '-')
+  PASS: claude ran read-only in the owner repo
+  PASS: incident file: cause + evidence + real rows
+  PASS: plan has every template-v2 section
+  PASS: plan cites the Showrunner quality-rules file
+  PASS: plan parses: feature, branch, repo = owner repo
+  PASS: fix build launched and registered in the owner repo
+  PASS: job FIXING, one ntfy naming the launch
+  PASS: queue entry consumed by the launch
+J2 one auto-fix per job per day: a second FAILED the same day escalates, no second build
+  PASS: ESCALATED: already ran today
+  PASS: claude not asked again
+J3 FAILED with a protected cause -> ESCALATED with ONE question, no plan, no queue
+  PASS: ESCALATED with the model's one question (priority high)
+  PASS: incident written with the protected reason
+  PASS: no plan, no queue entry, no build
+  PASS: protected_hit without a question -> generated one-line question
+  PASS: medium confidence never auto-fixes
+J4 repo busy -> fix plan queued behind the active build; launched by the normal post-merge queue
+  PASS: queued behind busy-build, not launched
+  PASS: FIXING ntfy says queued
+  PASS: progress while queued
+J5 fix MERGED -> the job's retry path runs exactly once -> next check OK -> one resolved ntfy
+  PASS: retry path ran exactly once
+  PASS: last action records the retry
+  PASS: job OK, exactly one resolved ntfy
+  PASS: no retry path (bf-daily) -> waits for the job's next run
+J6 exactly one ntfy per transition
+  PASS: bf-daily: FIXING once, ESCALATED once
+  PASS: showingtime: FIXING once, OK once
+  PASS: cc-optin-am / spc / realtea-generate: ESCALATED once each
+J7 (P1) two jobs of one free repo fail together -> exactly one fix build launched, the other queued behind it
+  registered: fix-bf-daily-20261113.json fix-spc-20261113.json; queue lines: 1
+  FAIL: exactly one fix build registered
+  FAIL: the other plan is still in the queue file, once; no other lines
+  FAIL: both jobs FIXING: one launched, one queued behind it
+  PASS: queue lock released
+J8 (P2) FIXING on day 1, rollover, fix MERGED on day 2 -> retry once -> resolved (failed day 1)
+  PASS: day 2 rolled over, day 1 carried unresolved, fix still tracked
+tests/test-job-operator.sh: line 199: /var/folders/73/yty_rbs11677nkpzqv6rnlb00000gn/T/tmp.Dvf3hRNUPh/retry-rollover.log: No such file or directory
+  FAIL: retry path ran exactly once on day 2
+bash: /var/folders/73/yty_rbs11677nkpzqv6rnlb00000gn/T/tmp.Dvf3hRNUPh/retry-rollover.log: No such file or directory
+  FAIL: OK, one resolved (failed 2026-11-13) ntfy, still one retry
+J9 (P2) day-1 fix still queued behind a busy build, the job FAILS on day 2 -> no second plan, nothing changed
+  PASS: day 1: fix queued behind busy-build-2
+  FAIL: no second plan written
+  FAIL: .fix_feature unchanged, queue unchanged
+  FAIL: FIXING: failed again, earlier fix still queued (claude not asked)
+
+Results: 29 passed, 8 failed
+tests/test-job-operator.sh: line 39: 80170 Terminated: 15          sleep 600 > /dev/null 2>&1
+tests/test-job-operator.sh: line 39: 75056 Terminated: 15          sleep 600 > /dev/null 2>&1

@@ -1,0 +1,20 @@
+{
+  "job": "drill-export",
+  "date": "2026-11-13",
+  "state": "OK",
+  "since": 1794592944,
+  "last_action": "total 49.75 at 2026-11-13T18:00:05Z",
+  "last_verdict": "ok",
+  "last_detail": "total 49.75 at 2026-11-13T18:00:05Z",
+  "checked_at": 1794592944,
+  "error_ticks": 0,
+  "failed_detail": "not OK by 09:00: 3 failed attempt(s); latest 2026-11-13T12:00:04Z: total is NaN (scripts/nightly-export.js:18)",
+  "operator_spawned": true,
+  "incident": "/Users/jimross/Projects/walkaway-cli/tests/drill/work-jobs/home/job-fixes/drill-export-2026-11-13/handoff/job-incident-drill-export-2026-11-13.md",
+  "fix_feature": "fix-drill-export-20261113",
+  "fix_plan": "/Users/jimross/Projects/walkaway-cli/tests/drill/work-jobs/home/job-fixes/drill-export-2026-11-13/handoff/build-plan-fix-drill-export-20261113.md",
+  "fix_date": "2026-11-13",
+  "retry_ran": true,
+  "last_ok_at": 1794592944,
+  "last_ok_date": "2026-11-13"
+}

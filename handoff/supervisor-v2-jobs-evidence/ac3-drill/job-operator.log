@@ -1,0 +1,6 @@
+[2026-11-13 13:24:00] job-operator diagnose bf-daily 2026-11-13
+[2026-11-13 13:24:51] jobs: bf-daily: FAILED -> ESCALATED - The Deals Hub export broke (Amazon page change) and the bf-deals-ingest-fix plan (7da72ae) is already written; may its builder probe Deals Hub live and run the daily to create today's draft on Audrey's account: yes or hold?
+[2026-11-13 13:23:29] job-operator diagnose drill-export 2026-11-13
+[2026-11-13 13:23:55] jobs: drill-export: FAILED -> FIXING - cause: The job failed on all 3 attempts on 2026-11-13 (11:00:02Z, 11:30:03Z, 12:00:04Z), each with ok=false, total=null and error "total is NaN (scripts/nightly-export; fix build fix-drill-export-20261113 queued behind drill-busy in nightly-export-drill
+[2026-11-13 13:24:57] job-operator diagnose showingtime 2026-11-13
+[2026-11-13 13:25:17] jobs: showingtime: FAILED -> ESCALATED - ShowingTime 2FA codes aren't arriving (both of today's logins hit the code screen and got nothing): can you check that ST is still sending its codes to the Gmail the server reads, and log in once by hand?

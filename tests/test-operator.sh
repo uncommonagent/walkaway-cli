@@ -15,6 +15,11 @@ export WALKAWAY_HOME="$W/home" GH_SIM_DIR="$W/gh" WALKAWAY_LAUNCH_LOG_DIR="$W/lo
 export WALKAWAY_BUILDER_CMD="${SCRIPT_DIR}/drill/stub-builder.sh" WALKAWAY_GH_CMD="${SCRIPT_DIR}/drill/gh-sim.sh"
 export WALKAWAY_OPERATOR_CMD="$W/stub-claude" WALKAWAY_NTFY_DISABLED=1 WALKAWAY_CLAUDE_PROJECTS="$W/none"
 export WALKAWAY_MERGE_CHECK_WAIT=30 WALKAWAY_MERGE_CHECK_POLL=1 NTFY_TOPIC=test-topic
+# No wall-clock 09/13/17 heartbeat: in those hours it repeats the RUNNING line and doubles the ntfy counts.
+# (Not empty: supervisor.sh reads ${WALKAWAY_HEARTBEAT_HOURS:-09 13 17}, so "" means the default hours.)
+export WALKAWAY_HEARTBEAT_HOURS=off
+# Kill-then-tick tests want DIED at once; the 3-min DIED grace has its own fixture (test-supervisor-states.sh).
+export WALKAWAY_DIED_GRACE_SECS=0
 mkdir -p "$WALKAWAY_HOME/queue" "$WALKAWAY_LAUNCH_LOG_DIR" "$W/decisions"
 touch "$WALKAWAY_HOME/supervisor.enabled"
 
@@ -102,6 +107,8 @@ check "DIED notified once" [ "$(grep -c 't-run: DIED - ' "$WALKAWAY_HOME/logs/nt
 check "relaunched (launch_count 2, resume_count 1)" [ "$(reg t-run .launch_count)/$(reg t-run .resume_count)" == "2/1" ]
 check "auto RESUME DIRECTIVE written under plan title" grep -q '^## RESUME DIRECTIVE (auto, resume 1/2' "$R1/handoff/build-plan-t-run.md"
 check "operator log committed" bash -c "git -C '$R1' log -1 --format=%s | grep -q 'operator: t-run: auto-resume 1/2'"
+check "resume keeps the pre-resume report baseline" bash -c "[[ \$(jq -r .report_baseline '$WALKAWAY_HOME/registry/t-run.json') -lt \$(jq -r .launched_epoch '$WALKAWAY_HOME/registry/t-run.json') ]]"
+check "resume directive carries the no-op resume rule" grep -q 'build-report t-run (no-op resume 1/2' "$R1/handoff/build-plan-t-run.md"
 check "new builder alive" kill -0 "$(reg t-run .builder_pid)"
 tick
 check "RUNNING after relaunch notified" [ "$(grep -c 't-run: RUNNING - ' "$WALKAWAY_HOME/logs/ntfy.log")" -eq 2 ]

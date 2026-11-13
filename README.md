@@ -74,6 +74,30 @@ Decisions are appended to `handoff/operator-log-<feature>.md` in the build repo 
 
 Queue: `~/.walkaway-cli/queue/<repo-basename>.txt`, one absolute plan path per line. After a merge the next plan for that repo launches (one builder per repo; repos run in parallel).
 
+Classification order (11/13 fix): a build report **committed at the branch head** since the last non-resume launch is DONE first (green CI starts the gate; pending CI waits; a plan that says "no PR yet" is DONE; no PR and the builder gone = STOPPED). DIED needs all three: builder PID gone, no build report at the branch head, and no activity for 3 min (`WALKAWAY_DIED_GRACE_SECS`). An auto-resume keeps the report baseline, and a resumed builder that finds nothing to do appends "(no-op resume)" to the build report and exits.
+
+## Scheduled-job watching (jobs.yaml)
+
+```bash
+./install-supervisor.sh --jobs-on    # touch ~/.walkaway-cli/jobs.enabled (--jobs-off removes it)
+bash lib/jobs.sh list                # the jobs
+bash lib/jobs.sh check bf-daily      # one read-only check (JSON); --date YYYY-MM-DD for a past day
+bash lib/jobs.sh dump                # every job's check with its queries, row counts and sample rows
+```
+
+`jobs.yaml` lists Jim's scheduled daily jobs (BF daily, CC opt-in AM/PM, SPC, extension reports, ShowingTime, Monday RealTea generate/publish) with the owner repo, schedule window, retry-window end, read-only check (Supabase REST GETs with the service-role key read from the owner repo's `.env.local` at call time and passed to curl on stdin, plus log greps) and a jq predicate. While job watching is on, every supervisor tick moves each job through one state per day:
+
+| State | Meaning | ntfy |
+|---|---|---|
+| PENDING | window not open / not run / in progress | - |
+| RETRYING | failed inside its own retry window | - (no alert) |
+| OK | done today | only when it resolves a failure ("resolved") |
+| FAILED | retry window passed (or terminal: HALTED, STOP:, no success in 26 h) | one line, then the job operator |
+| FIXING | fix build queued/launched | one line |
+| ESCALATED | one question for Jim | one line, priority high |
+
+The job operator (`lib/job-operator.sh`, headless `claude -p` with `templates/job-operator-prompt.md`, read-only tools) diagnoses from the rows, logs and owner-repo code, writes `handoff/job-incident-<job>-<date>.md` in `~/.walkaway-cli/job-fixes/<job>-<date>/`, and then either renders a template-v2 fix plan (`## Repo` = owner repo) that is queued/launched like any walkaway build (one per job per day, one builder per repo), or escalates ONE question when the cause or fix touches a PROTECTED action, needs the job's live action on a protected job, or is not high-confidence. After the fix merges it runs the job's safe retry path once (`retry.command`; only ShowingTime has one) and the next check confirms OK. The 09/13/17 heartbeat lists every non-OK job whose window has opened; `walkaway status` prints a JOBS table under the builds.
+
 ## Flags
 
 | Flag | Description |
@@ -119,6 +143,10 @@ Edit this file to adjust the wrapper text. Variables substituted at runtime:
 ~/.walkaway-cli/logs/supervisor.log            Supervisor ticks
 ~/.walkaway-cli/logs/operator-<feature>.log    Operator jobs
 ~/.walkaway-cli/logs/ntfy.log                  Every ntfy line sent
+~/.walkaway-cli/jobs.enabled                   Job watching on (flag file)
+~/.walkaway-cli/jobs/state/<job>.json          Job day state (state, last OK, last action, fix build)
+~/.walkaway-cli/job-fixes/<job>-<date>/handoff Incident, evidence JSON, generated fix plan
+~/.walkaway-cli/logs/job-operator-<job>.log    Job operator runs
 ```
 
 ## Plan format requirements

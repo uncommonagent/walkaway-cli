@@ -1,0 +1,30 @@
+# walkaway status, live, Phase 8 (2026-11-13 13:26 EST), launchd supervisor running this branch's final code (9e4c1c7)
+supervisor last tick: 2026-11-13 13:25:30 EST
+FEATURE              REPO                 STATE    AGE     IN-STATE  LAST ACTION
+bf-deals-ingest-fix  audrey-ops-platform  MERGED   3h55m   3h53m     PR #28 merged by Claude-in-chat after manual gate (escalation was a supervisor false-DIED race)
+bf-taste-scoring     audrey-ops-platform  RUNNING  14m     12m       builder pid 70783, active 0m ago
+build-supervisor     walkaway-cli         MERGED   21h33m  21h10m    PR #1 squash-merged by merge gate; queue empty
+new-lists-grid       audrey-ops-platform  MERGED   21h0m   20h33m    PR #27 squash-merged by merge gate; queue empty
+supervisor-v2-jobs   walkaway-cli         RUNNING  53m     51m       builder pid 77896, active 0m ago
+
+JOBS (2026-11-13, job watching on)
+JOB                TODAY      LAST OK      LAST ACTION
+bf-daily           OK         11-13 12:14  2026-11-13T14:21:05Z BF lists daily 11/13: OK | deals 15000 (31435 live) from dealshub | drafts 1/1 | curation
+cc-optin-am        OK         11-13 12:14  DONE 2026-11-13T16:25:19Z
+cc-optin-pm        disabled   -            -
+spc                OK         11-13 12:14  ACCEPTED 162/162 at 2026-11-13T16:29:20Z
+extension-reports  OK         11-13 13:25  10 report types succeeded within 26 h, none in error
+showingtime        OK         11-13 12:14  2026-11-12 total showings=2390 (first seen 2026-11-13T11:45:43Z); agent decision=SILENT_PRESENT
+realtea-generate   off today  -            not scheduled today (mon)
+realtea-publish    off today  -            not scheduled today (mon)
+
+# supervisor.log since job watching ON (live transitions)
+[2026-11-13 12:14:13] jobs: bf-daily: PENDING -> OK - 2026-11-13T14:21:05Z BF lists daily 11/13: OK | deals 15000 (31435 live) from dealshub | drafts 1/1 | curations early_bf 0 ops ok, gift_guides 0 ops ok
+[2026-11-13 12:14:13] jobs: cc-optin-am: PENDING -> OK - DONE 2026-11-13T16:25:19Z
+[2026-11-13 12:14:13] jobs: spc: PENDING -> OK - ACCEPTED 162/162 at 2026-11-13T16:29:20Z
+[2026-11-13 12:14:14] jobs: extension-reports: PENDING -> OK - 10 report types succeeded within 26 h, none in error
+[2026-11-13 12:14:14] jobs: showingtime: PENDING -> OK - 2026-11-12 total showings=2390 (first seen 2026-11-13T11:45:43Z); agent decision=SILENT_PRESENT
+[2026-11-13 12:32:32] supervisor-v2-jobs: RUNNING -> STOPPED - failure-report-supervisor-v2-jobs-codex.md; operator triage started
+[2026-11-13 12:34:34] supervisor-v2-jobs: LAUNCHED -> RUNNING - approved fix 1, relaunched (builder pid 77896); builder pid 77896, active 0m ago
+[2026-11-13 13:07:09] bf-taste-scoring: RUNNING -> DONE - PR #29 checks pending; merge gate waits for green CI
+[2026-11-13 13:13:14] bf-taste-scoring: LAUNCHED -> RUNNING - merge-gate rejection 1/2, relaunched (builder pid 70783); builder pid 70783, active 0m ago

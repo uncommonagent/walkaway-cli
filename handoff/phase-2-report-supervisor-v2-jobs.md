@@ -1,0 +1,23 @@
+# Phase 2 report - supervisor-v2-jobs (jobs.yaml + read-only check engine, plan item 2)
+
+- **`jobs.yaml`** (repo root) defines 8 jobs: bf-daily, cc-optin-am, cc-optin-pm (enabled: false, PM off since 10/31), spc, extension-reports (rolling), showingtime, realtea-generate, realtea-publish (both Mon only).
+  - Fields: name, owner_repo, days, kind, window, retry_end / retry_window_mins, protected, quality_rules, retry, check {source, queries, logs, predicate}, diagnose {queries, logs, notes}.
+  - Every time and table was confirmed in Phase 0 (deviations and evidence: phase0-job-discovery.md).
+- **`lib/jobs.sh`** commands: `list`, `check <job> [--date D]`, `dump [--out F] [job=D ...]`.
+  - Placeholders: {date} {yesterday} {day_start_utc} {day_end_utc} {since_26h_utc} + vars.
+  - The jq predicate returns ok | pending | retrying | failed. A source or predicate failure gives verdict `error`, which never counts as a job failure on its own.
+- **Read-only by construction:**
+  - GET only (no -X, no body); `rpc/` paths refused.
+  - The service-role key is read from the source env file and passed to curl on stdin (`-K -`), so it never appears in argv or output (dump grep for eyJ/sb_secret/service_role = 0).
+- **Test seams:** WALKAWAY_JOBS_FILE, WALKAWAY_JOBS_REST_FIXTURES (fixture rows per job/query), WALKAWAY_JOBS_NOW (time travel).
+- **Live dump** (handoff/supervisor-v2-jobs-evidence/ac2-jobs-check-dump-phase2.md): all 8 jobs OK on real rows.
+  - bf-daily 11/13 OK 14:21:05Z after 5 failed rows.
+  - cc-optin-am 11/13 DONE.
+  - cc-optin-pm 10/31 DONE.
+  - spc 11/12 ACCEPTED 165/165.
+  - extension-reports: 10 types OK.
+  - showingtime 11/12 = 2390 + SILENT_PRESENT.
+  - realtea 11/09: #71 generated + published.
+- jobs.sh is not sourced by the supervisor yet, so there is no live effect this phase.
+- **Gates:** shellcheck -S warning 0; parse 7/7, states 18/18, regression 12/12. The operator suite was not re-run because none of its files changed (68/68 at 423ed29).
+- **Files:** jobs.yaml (new), lib/jobs.sh (new), handoff evidence + reports.

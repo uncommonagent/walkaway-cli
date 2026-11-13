@@ -1,0 +1,43 @@
+$ bash tests/test-died-done-regression.sh   (fixed lib)
+replaying 11/13 bf-deals-ingest-fix against /Users/jimross/Projects/walkaway-cli/tests/../lib
+  PASS: builder working -> RUNNING
+  PASS: 09:28:47 tick: DONE, not DIED
+  PASS: DONE records pending CI and waits
+  PASS: no DIED ntfy
+  PASS: zero resumes (resume_count 0, launch_count 1)
+  PASS: no RESUME DIRECTIVE written to the plan
+  PASS: no relaunch attempted
+  PASS: later ticks: still DONE, still zero resumes
+  PASS: exactly one DONE ntfy, no ESCALATED
+  PASS: green CI starts the merge gate
+  PASS: gate reached (stand-in verdict logged)
+  PASS: whole replay: zero resumes, zero DIED
+  ntfy lines:
+    2026-11-13T11:41:17-0500	regression	default	bf-deals-ingest-fix: RUNNING - builder pid 8170, active 0m ago
+    2026-11-13T11:41:17-0500	regression	default	bf-deals-ingest-fix: DONE - PR #28 checks pending; merge gate waits for green CI
+    2026-11-13T11:41:22-0500	regression	high	bf-deals-ingest-fix: ESCALATED - regression replay: merge gate reached
+
+Results: 12 passed, 0 failed
+rc=0
+
+$ WALKAWAY_LIB=<git archive 830b728>/lib bash tests/test-died-done-regression.sh   (pre-fix lib, must FAIL)
+replaying 11/13 bf-deals-ingest-fix against /tmp/wa-old/lib
+  PASS: builder working -> RUNNING
+  FAIL: 09:28:47 tick: DONE, not DIED
+  FAIL: DONE records pending CI and waits
+  FAIL: no DIED ntfy
+  FAIL: zero resumes (resume_count 0, launch_count 1)
+  FAIL: no RESUME DIRECTIVE written to the plan
+  FAIL: no relaunch attempted
+  FAIL: later ticks: still DONE, still zero resumes
+  FAIL: exactly one DONE ntfy, no ESCALATED
+  FAIL: green CI starts the merge gate
+  FAIL: gate reached (stand-in verdict logged)
+  FAIL: whole replay: zero resumes, zero DIED
+  ntfy lines:
+    2026-11-13T11:41:23-0500	regression	default	bf-deals-ingest-fix: RUNNING - builder pid 9795, active 0m ago
+    2026-11-13T11:41:23-0500	regression	default	bf-deals-ingest-fix: DIED - builder pid 9795 gone (or recycled), no new report; auto-resume starting
+    2026-11-13T11:42:25-0500	regression	high	bf-deals-ingest-fix: ESCALATED - Auto-resume relaunch failed for bf-deals-ingest-fix (see /var/folders/73/yty_rbs11677nkpzqv6rnlb00000gn/T/tmp.qlSkcbJ8fP/logs/walkaway-bf-deals-ingest-fix-auto-*.log). Relaunch manually?
+
+Results: 1 passed, 11 failed
+rc=1

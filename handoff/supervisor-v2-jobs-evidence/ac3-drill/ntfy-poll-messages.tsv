@@ -1,0 +1,9 @@
+18:23:26	3	drill-busy: RUNNING - builder pid 1337, active 0m ago
+18:23:29	3	job drill-export: FAILED - not OK by 09:00: 3 failed attempt(s); latest 2026-11-13T12:00:04Z: total is NaN (scripts/nightly-export.js:18); diagnosing
+18:23:55	3	job drill-export: FIXING - cause: The job failed on all 3 attempts on 2026-11-13 (11:00:02Z, 11:30:03Z, 12:00:04Z), each with ok=false, total=null and error "total is NaN (scripts/nightly-export; fix build fix-drill-export-20261113 queued behind drill-busy in nightly-export-drill
+18:24:00	3	job bf-daily: FAILED - not OK by 12:00: 3 failed attempt(s); latest 2026-11-13T12:43:36Z: BF lists daily 11/13: FAILED | deals 39 (39 live) from node | drafts 0/1 | curations early_bf 0 ops ok, gift_guides 0 ops ok | errors: export: deals hub capture: listDealsExports call not seen in 15 s (+1); diagnosing
+18:24:51	4	job bf-daily: ESCALATED - The Deals Hub export broke (Amazon page change) and the bf-deals-ingest-fix plan (7da72ae) is already written; may its builder probe Deals Hub live and run the daily to create today's draft on Audrey's account: yes or hold?
+18:24:57	3	job showingtime: FAILED - not OK by 12:45: 2026-11-12 missing; last session otp_timeout/alarm at 2026-11-13T11:31:12Z (dates_failed 8); agent decision=ACT_OTP_TIMEOUT; diagnosing
+18:25:17	4	job showingtime: ESCALATED - ShowingTime 2FA codes aren't arriving (both of today's logins hit the code screen and got nothing): can you check that ST is still sending its codes to the Gmail the server reads, and log in once by hand?
+18:25:25	3	job bf-daily: OK - resolved: 2026-11-13T14:21:05Z BF lists daily 11/13: OK | deals 15000 (31435 live) from dealshub | drafts 1/1 | curations early_bf 0 ops ok, gift_guides 0 ops ok
+18:25:25	3	job drill-export: OK - resolved: total 49.75 at 2026-11-13T18:00:05Z

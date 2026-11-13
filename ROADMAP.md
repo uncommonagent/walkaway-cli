@@ -21,3 +21,16 @@ were not built. Source: handoff/failure-report-build-supervisor-codex-cycle-2.md
   records its action. As a result, the first RUNNING ntfy after a relaunch can miss the "approved fix N" label.
   This is cosmetic. Fix: have the operator write last_action before it relaunches, or have the supervisor wait for
   it.
+
+### From supervisor-v2-jobs (Codex cycle 2, 2026-11-13)
+
+- **Stale queue-lock takeover race.** `queue_lock` in lib/registry.sh takes over a stale lock (its pid is dead) by
+  renaming it aside. Suppose two waiters both see the same dead pid. The first renames the stale lock and makes a
+  fresh one before the second runs `mv`. The second then renames away the first waiter's live lock, and both enter
+  the launch critical section. This needs a lock holder killed with SIGKILL (or a crash) mid-launch while two other
+  launchers for the same repo are waiting. Normal exits release the lock through the EXIT trap. Fix: serialize
+  reclamation (a separate reclaim lock), or verify that the renamed directory's pid is the dead pid that was
+  inspected and restore it otherwise. Source: handoff/codex-review-supervisor-v2-jobs.md cycle 2.
+- **Heartbeat hours default.** lib/supervisor.sh reads `${WALKAWAY_HEARTBEAT_HOURS:-09 13 17}`, so an empty value
+  means the default hours, not "off". Tests now use `off`. Consider `${WALKAWAY_HEARTBEAT_HOURS-...}` so that
+  empty disables it.

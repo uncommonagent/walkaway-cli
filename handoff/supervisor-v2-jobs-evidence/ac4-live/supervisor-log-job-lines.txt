@@ -1,0 +1,5 @@
+[2026-11-13 12:14:13] jobs: bf-daily: PENDING -> OK - 2026-11-13T14:21:05Z BF lists daily 11/13: OK | deals 15000 (31435 live) from dealshub | drafts 1/1 | curations early_bf 0 ops ok, gift_guides 0 ops ok
+[2026-11-13 12:14:13] jobs: cc-optin-am: PENDING -> OK - DONE 2026-11-13T16:25:19Z
+[2026-11-13 12:14:13] jobs: spc: PENDING -> OK - ACCEPTED 162/162 at 2026-11-13T16:29:20Z
+[2026-11-13 12:14:14] jobs: extension-reports: PENDING -> OK - 10 report types succeeded within 26 h, none in error
+[2026-11-13 12:14:14] jobs: showingtime: PENDING -> OK - 2026-11-12 total showings=2390 (first seen 2026-11-13T11:45:43Z); agent decision=SILENT_PRESENT

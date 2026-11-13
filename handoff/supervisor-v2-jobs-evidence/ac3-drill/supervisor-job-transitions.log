@@ -1,0 +1,11 @@
+[2026-11-13 13:23:27] jobs: bf-daily: PENDING -> RETRYING - 3 failed attempt(s); latest 2026-11-13T12:43:36Z: BF lists daily 11/13: FAILED | deals 39 (39 live) from node | drafts 0/1 | curations early_bf 0 ops ok, gift_guides 0 ops ok | errors: export: deals hub capture: listDealsExports call not seen in 15 s (+1)
+[2026-11-13 13:23:27] jobs: extension-reports: PENDING -> RETRYING - in error: tracking_offsite (error 2026-11-13T13:05:00Z: offsite pull failed: listReports timeout)
+[2026-11-13 13:23:27] jobs: drill-export: PENDING -> RETRYING - 3 failed attempt(s); latest 2026-11-13T12:00:04Z: total is NaN (scripts/nightly-export.js:18)
+[2026-11-13 13:23:28] jobs: extension-reports: RETRYING -> OK - 10 report types succeeded within 26 h, none in error
+[2026-11-13 13:23:28] jobs: cc-optin-am: PENDING -> OK - DONE 2026-11-13T16:25:19Z
+[2026-11-13 13:23:28] jobs: spc: PENDING -> OK - ACCEPTED 162/162 at 2026-11-13T16:29:20Z
+[2026-11-13 13:23:29] jobs: drill-export: RETRYING -> FAILED - not OK by 09:00: 3 failed attempt(s); latest 2026-11-13T12:00:04Z: total is NaN (scripts/nightly-export.js:18); diagnosing
+[2026-11-13 13:24:00] jobs: bf-daily: RETRYING -> FAILED - not OK by 12:00: 3 failed attempt(s); latest 2026-11-13T12:43:36Z: BF lists daily 11/13: FAILED | deals 39 (39 live) from node | drafts 0/1 | curations early_bf 0 ops ok, gift_guides 0 ops ok | errors: export: deals hub capture: listDealsExports call not seen in 15 s (+1); diagnosing
+[2026-11-13 13:24:56] jobs: showingtime: PENDING -> FAILED - not OK by 12:45: 2026-11-12 missing; last session otp_timeout/alarm at 2026-11-13T11:31:12Z (dates_failed 8); agent decision=ACT_OTP_TIMEOUT; diagnosing
+[2026-11-13 13:25:24] jobs: bf-daily: ESCALATED -> OK - 2026-11-13T14:21:05Z BF lists daily 11/13: OK | deals 15000 (31435 live) from dealshub | drafts 1/1 | curations early_bf 0 ops ok, gift_guides 0 ops ok
+[2026-11-13 13:25:25] jobs: drill-export: FIXING -> OK - total 49.75 at 2026-11-13T18:00:05Z
