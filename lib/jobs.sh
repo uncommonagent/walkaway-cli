@@ -272,7 +272,7 @@ _jobs_rollover() {
   jstate_update "$job" '.date = $d | .state = "PENDING" | .since = ($now|tonumber) | .error_ticks = 0
       | .last_action = ("new day" + (if $c != "" then "; " + $c + " unresolved" else "" end))
       | (if $c != "" then .unresolved_from = $c else . end)
-      | del(.retrying_since, .operator_pid, .incident)' \
+      | del(.retrying_since, .operator_pid, .operator_spawned, .incident)' \
     --arg d "$today" --arg c "$carry" --arg now "$(_jobs_now)"
 }
 
@@ -285,7 +285,7 @@ _jobs_spawn_operator() {
   nohup bash "$op" diagnose "$job" "$d" >> "$log" 2>&1 < /dev/null &
   local p=$!
   disown "$p" 2>/dev/null || true
-  jstate_update "$job" '.operator_pid = ($p|tonumber)' --arg p "$p"
+  jstate_update "$job" '.operator_pid = ($p|tonumber) | .operator_spawned = true' --arg p "$p"
 }
 
 _jobs_operator_alive() { local p; p=$(jstate_get "$1" .operator_pid); [[ -n "$p" ]] && kill -0 "$p" 2>/dev/null; }
@@ -343,7 +343,15 @@ jobs_evaluate() {
 
   case "$state" in
     FIXING)    _jobs_fix_progress "$name" "$today"; return 0 ;;
-    FAILED|ESCALATED) jstate_update "$name" '.last_action = $a' --arg a "still $verdict: $detail"; return 0 ;;
+    FAILED)
+      # The job operator finished but recorded no FIXING/ESCALATED: never leave a failure silent.
+      if [[ "$(jstate_get "$name" .operator_spawned)" == "true" ]]; then
+        jobs_transition "$name" ESCALATED "Job operator exited without a decision on $name ($(jstate_get "$name" .failed_detail | cut -c1-100)). How should it be handled?"
+      else
+        jstate_update "$name" '.last_action = $a' --arg a "still $verdict: $detail"
+      fi
+      return 0 ;;
+    ESCALATED) jstate_update "$name" '.last_action = $a' --arg a "still $verdict: $detail"; return 0 ;;
   esac
 
   local new

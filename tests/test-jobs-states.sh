@@ -14,8 +14,15 @@ trap '[[ -n "${KEEP_WORK:-}" ]] && echo "kept $W" || rm -rf "$W"' EXIT
 export WALKAWAY_HOME="$W/home" WALKAWAY_NTFY_DISABLED=1 NTFY_TOPIC=jobs-test WALKAWAY_JOBS_REST_FIXTURES="$W/rest"
 export WALKAWAY_JOB_OPERATOR="$W/op-stub.sh"
 mkdir -p "$W/rest"
-# shellcheck disable=SC2016
-printf '#!/usr/bin/env bash\necho "$*" >> "$WALKAWAY_HOME/op-calls.log"\n' > "$W/op-stub.sh"
+# Stub job operator: records the call; "diagnose" ends in FIXING like a real fix decision (one ntfy).
+cat > "$W/op-stub.sh" <<EOF
+#!/usr/bin/env bash
+echo "\$*" >> "\$WALKAWAY_HOME/op-calls.log"
+[[ "\$1" == diagnose ]] || exit 0
+source "$ROOT/lib/jobs.sh"
+jobs_transition "\$2" FIXING "stub fix build queued"
+jstate_update "\$2" 'del(.operator_pid)'
+EOF
 # Each scenario gets its own home: time-travelled ticks of one scenario never leak state into the next.
 fresh() { export WALKAWAY_HOME="$W/home-$1"; mkdir -p "$WALKAWAY_HOME"; quiet; }
 
@@ -48,16 +55,17 @@ check "RETRYING sent no ntfy" [ "$(ntfy_all bf-daily)" -eq 0 ]
 tick "2026-11-13 11:59"
 check "11:59 still inside the retry window: RETRYING" [ "$(st bf-daily state)" == "RETRYING" ]
 tick "2026-11-13 12:01"
-check "12:01 window passed: FAILED" [ "$(st bf-daily state)" == "FAILED" ]
+check "12:01 window passed: FAILED (the stub operator may already have moved it to FIXING)" bash -c "[[ '$(st bf-daily state)' == FAILED || '$(st bf-daily state)' == FIXING ]]"
 check "exactly one FAILED ntfy naming the window" bash -c "[[ \$(grep -c 'job bf-daily: FAILED - not OK by 12:00: 3 failed attempt(s)' '$WALKAWAY_HOME/logs/ntfy.log') -eq 1 ]]"
-check "job operator spawned once: diagnose bf-daily 2026-11-13" bash -c "[[ \$(cat '$WALKAWAY_HOME/op-calls.log') == 'diagnose bf-daily 2026-11-13' ]]"
+check "job operator spawned once: diagnose bf-daily 2026-11-13" bash -c "[[ \$(grep diagnose '$WALKAWAY_HOME/op-calls.log') == 'diagnose bf-daily 2026-11-13' ]]"
 tick "2026-11-13 12:03"
-check "FAILED is sticky (no second ntfy, no second operator)" [ "$(ntfy bf-daily FAILED)/$(wc -l < "$WALKAWAY_HOME/op-calls.log" | tr -d ' ')" == "1/1" ]
+check "FAILED -> FIXING (stub operator), no second FAILED, no second diagnose" [ "$(st bf-daily state)/$(ntfy bf-daily FAILED)/$(grep -c diagnose "$WALKAWAY_HOME/op-calls.log")" == "FIXING/1/1" ]
+check "FIXING follows the fix each tick (progress)" grep -q '^progress bf-daily 2026-11-13' "$WALKAWAY_HOME/op-calls.log"
 rest bf-daily runs "$FX/bf-1113-recovered.json"
 tick "2026-11-13 12:10"
 check "recovered row: OK" [ "$(st bf-daily state)" == "OK" ]
 check "exactly one resolved ntfy" bash -c "[[ \$(grep -c 'job bf-daily: OK - resolved: 2026-11-13T14:21:05Z BF lists daily 11/13: OK' '$WALKAWAY_HOME/logs/ntfy.log') -eq 1 ]]"
-check "bf-daily total ntfy = 2 (FAILED, resolved)" [ "$(ntfy_all bf-daily)" -eq 2 ]
+check "bf-daily total ntfy = 3 (FAILED, FIXING, resolved)" [ "$(ntfy_all bf-daily)" -eq 3 ]
 tick "2026-11-14 06:00"
 check "next day: PENDING, nothing carried (resolved)" [ "$(st bf-daily state)/$(st bf-daily date)/$(st bf-daily unresolved_from)" == "PENDING/2026-11-14/" ]
 
@@ -65,7 +73,7 @@ echo "S2 CC opt-in AM HALTED (real 11/04 row): terminal -> FAILED immediately; n
 fresh s2
 rest cc-optin-am run "$FX/cc-am-1104-halted.json"
 tick "2026-11-04 10:00"
-check "10:00 HALTED: FAILED before the 15:45 window end" [ "$(st cc-optin-am state)" == "FAILED" ]
+check "10:00 HALTED: FAILED before the 15:45 window end (or already FIXING)" bash -c "[[ '$(st cc-optin-am state)' == FAILED || '$(st cc-optin-am state)' == FIXING ]]"
 check "one FAILED ntfy with the halted reason" bash -c "[[ \$(grep -c 'job cc-optin-am: FAILED - HALTED: unrecognized submit response (batch 0); diagnosing' '$WALKAWAY_HOME/logs/ntfy.log') -eq 1 ]]"
 rest cc-optin-am run '[{"run_date":"2026-11-05","session":"am","status":"DONE","halted_reason":null,"updated_at":"2026-11-05T18:26:02Z"}]'
 tick "2026-11-05 08:00"
@@ -73,7 +81,7 @@ check "next day carries the unresolved failure" [ "$(st cc-optin-am state)/$(st 
 tick "2026-11-05 13:30"
 check "13:30 DONE (11/05 real time): OK" [ "$(st cc-optin-am state)" == "OK" ]
 check "resolution ntfy names the failed day" grep -q 'job cc-optin-am: OK - resolved (failed 2026-11-04): DONE 2026-11-05T18:26:02Z' "$WALKAWAY_HOME/logs/ntfy.log"
-check "cc-optin-am total ntfy = 2" [ "$(ntfy_all cc-optin-am)" -eq 2 ]
+check "cc-optin-am total ntfy = 3 (FAILED, FIXING, resolved)" [ "$(ntfy_all cc-optin-am)" -eq 3 ]
 
 echo "S3 extension reports (rolling): 11/13 tracking_offsite error recovered on retry = silent; persisting > 2 h = FAILED once"
 fresh s3
@@ -90,7 +98,7 @@ tick "2026-11-13 08:30"
 tick "2026-11-13 10:29"
 check "10:29 (1h59m in error): RETRYING, silent" [ "$(st extension-reports state)/$(ntfy_all extension-reports)" == "RETRYING/0" ]
 tick "2026-11-13 10:31"
-check "10:31 (> 2 h): FAILED once" [ "$(st extension-reports state)/$(ntfy extension-reports FAILED)" == "FAILED/1" ]
+check "10:31 (> 2 h): FAILED once" [ "$(ntfy extension-reports FAILED)" -eq 1 ]
 check "FAILED names the type and duration" grep -q 'job extension-reports: FAILED - in error: tracking_offsite (error 2026-11-13T13:05:00Z: offsite pull failed: listReports timeout) (persisting 121m); diagnosing' "$WALKAWAY_HOME/logs/ntfy.log"
 jq '(.[] | select(.report_type == "bounty")) |= (.last_success_at = "2026-11-12T08:00:00+00:00")' "$FX/ext-state-1113.json" > "$W/ext-stale.json"
 fresh s3b
@@ -128,6 +136,14 @@ check "13:00: RETRYING bf-daily listed" grep -q '^job bf-daily: RETRYING - 3 fai
 tick "2026-11-17 13:00"
 hb=$(WALKAWAY_JOBS_NOW=$(at "2026-11-17 13:00") bash "$ROOT/lib/jobs.sh" heartbeat)
 check "OK jobs not listed (spc OK at 13:00)" bash -c "! grep -q 'job spc' <<< '$hb'"
+
+echo "S6b job operator exits without a decision -> ESCALATED once"
+fresh s6b
+printf '#!/usr/bin/env bash\nsource "%s/lib/jobs.sh"; jstate_update "$2" "del(.operator_pid)"\n' "$ROOT" > "$W/op-silent.sh"
+rest bf-daily runs "$FX/bf-1113-failures.json"
+WALKAWAY_JOB_OPERATOR="$W/op-silent.sh" WALKAWAY_JOBS_NOW=$(at "2026-11-13 12:01") bash "$ROOT/lib/jobs.sh" tick >> "$W/tick.log" 2>&1; sleep 0.5
+WALKAWAY_JOB_OPERATOR="$W/op-silent.sh" WALKAWAY_JOBS_NOW=$(at "2026-11-13 12:03") bash "$ROOT/lib/jobs.sh" tick >> "$W/tick.log" 2>&1
+check "silent operator -> ESCALATED once" [ "$(st bf-daily state)/$(ntfy bf-daily ESCALATED)" == "ESCALATED/1" ]
 
 echo "S7 walkaway status JOBS table"
 out=$(WALKAWAY_JOBS_NOW=$(at "2026-11-17 13:00") bash "$ROOT/walkaway.sh" status)
