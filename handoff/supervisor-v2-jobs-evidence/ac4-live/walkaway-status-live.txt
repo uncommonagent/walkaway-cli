@@ -1,0 +1,30 @@
+$ date; launchctl print gui/501/com.jimross.walkaway-supervisor (excerpt); ls ~/.walkaway-cli/jobs.enabled
+Fri Nov 13 12:16:19 EST 2026
+	state = not running
+	program = /bin/bash
+	arguments = {
+	last exit code = 0
+		state = active
+		state = active
+	run interval = 120 seconds
+-rw-r--r--@ 1 jimross  staff  0 Nov 13 12:13 /Users/jimross/.walkaway-cli/jobs.enabled
+
+$ walkaway status
+supervisor last tick: 2026-11-13 12:16:16 EST
+FEATURE              REPO                 STATE    AGE     IN-STATE  LAST ACTION
+bf-deals-ingest-fix  audrey-ops-platform  MERGED   2h45m   2h43m     PR #28 merged by Claude-in-chat after manual gate (escalation was a supervisor false-DIED race)
+bf-taste-scoring     audrey-ops-platform  RUNNING  51m     50m       builder pid 764, active 8m ago
+build-supervisor     walkaway-cli         MERGED   20h24m  20h0m     PR #1 squash-merged by merge gate; queue empty
+new-lists-grid       audrey-ops-platform  MERGED   19h51m  19h23m    PR #27 squash-merged by merge gate; queue empty
+supervisor-v2-jobs   walkaway-cli         RUNNING  51m     50m       builder pid 146, active 1m ago
+
+JOBS (2026-11-13, job watching on)
+JOB                TODAY      LAST OK      LAST ACTION
+bf-daily           OK         11-13 12:14  2026-11-13T14:21:05Z BF lists daily 11/13: OK | deals 15000 (31435 live) from dealshub | drafts 1/1 | curation
+cc-optin-am        OK         11-13 12:14  DONE 2026-11-13T16:25:19Z
+cc-optin-pm        disabled   -            -
+spc                OK         11-13 12:14  ACCEPTED 162/162 at 2026-11-13T16:29:20Z
+extension-reports  OK         11-13 12:16  10 report types succeeded within 26 h, none in error
+showingtime        OK         11-13 12:14  2026-11-12 total showings=2390 (first seen 2026-11-13T11:45:43Z); agent decision=SILENT_PRESENT
+realtea-generate   off today  -            not scheduled today (mon)
+realtea-publish    off today  -            not scheduled today (mon)

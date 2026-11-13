@@ -1,0 +1,16 @@
+supervisor last tick: 2026-11-13 12:22:28 EST
+FEATURE                    REPO                  STATE    AGE  IN-STATE  LAST ACTION
+drill-busy                 nightly-export-drill  RUNNING  1m   1m        builder pid 37567, active 1m ago
+fix-drill-export-20261113  nightly-export-drill  MERGED   0m   0m        drill: simulated merge
+
+JOBS (2026-11-13, job watching on)
+JOB                TODAY      LAST OK      LAST ACTION
+bf-daily           OK         11-13 13:02  2026-11-13T14:21:05Z BF lists daily 11/13: OK | deals 15000 (31435 live) from dealshub | drafts 1/1 | curation
+cc-optin-am        OK         11-13 09:01  DONE 2026-11-13T16:25:19Z
+cc-optin-pm        disabled   -            -
+spc                OK         11-13 09:01  ACCEPTED 162/162 at 2026-11-13T16:29:20Z
+extension-reports  OK         11-13 13:04  10 report types succeeded within 26 h, none in error
+showingtime        ESCALATED  -            still retrying: 2026-11-12 missing; last session otp_timeout/alarm at 2026-11-13T11:31:12Z (dates_failed 8); a
+realtea-generate   off today  -            not scheduled today (mon)
+realtea-publish    off today  -            not scheduled today (mon)
+drill-export       OK         11-13 13:02  total 49.75 at 2026-11-13T18:00:05Z

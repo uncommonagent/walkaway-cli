@@ -91,7 +91,8 @@ _write_incident() {
     printf '## Evidence\n'; _md_list '.evidence' <<< "$dec"
     printf '\n## Decision\n%s\n' "$outcome"
     printf -- '- confidence: %s; protected_hit: %s; needs_live_action: %s\n' \
-      "$(jq -r '.confidence // "-"' <<< "$dec")" "$(jq -r '.protected_hit // "-"' <<< "$dec")" "$(jq -r '.needs_live_action // "-"' <<< "$dec")"
+      "$(jq -r '.confidence // "-"' <<< "$dec")" "$(jq -r 'if .protected_hit == null then "-" else .protected_hit end' <<< "$dec")" \
+      "$(jq -r 'if .needs_live_action == null then "-" else .needs_live_action end' <<< "$dec")"
     printf '\n## Check rows (read-only, %s)\n' "$(jq -r '.check.checked_at' <<< "$ev")"
     jq -r '.check.paths | to_entries[] | "- query \(.key): `\(.value)`"' <<< "$ev"
     printf '\n```json\n%s\n```\n' "$(jq '{verdict: .check.verdict, detail: .check.detail, rows: .check.rows, sample: .check.sample, log: .check.log}' <<< "$ev" | head -c 6000)"
@@ -249,7 +250,8 @@ Diagnose the failure from the evidence and the code. Decide fix (fill every fix 
     jobs_transition "$job_name" ESCALATED "${outcome#LAUNCH-FAILED }. Launch the fix for $job_name manually?"
     return 0
   fi
-  jobs_transition "$job_name" FIXING "cause: $(jq -r .cause <<< "$dec" | cut -c1-120); $outcome"
+  # ntfy line: the cause's first sentence (bounded), then what happened to the fix build.
+  jobs_transition "$job_name" FIXING "cause: $(jq -r '.cause | split(". ")[0] | .[0:160]' <<< "$dec"); $outcome"
 }
 
 jo_progress() {

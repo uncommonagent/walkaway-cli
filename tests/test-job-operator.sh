@@ -78,6 +78,7 @@ diagnose bf-daily 2026-11-13
 WS="$WALKAWAY_HOME/job-fixes/bf-daily-2026-11-13/handoff"
 INC="$WS/job-incident-bf-daily-2026-11-13.md"
 PLAN="$WS/build-plan-fix-bf-daily-20261113.md"
+check "incident records false flags as false (not '-')" grep -q 'confidence: high; protected_hit: false; needs_live_action: false' "$WALKAWAY_HOME/job-fixes/bf-daily-2026-11-13/handoff/job-incident-bf-daily-2026-11-13.md"
 check "claude ran read-only in the owner repo" grep -q "stub-claude bf-daily cwd=$R1\$" "$W/stub-claude.log"
 check "incident file: cause + evidence + real rows" bash -c "grep -q '^## Cause' '$INC' && grep -q 'Deals Hub capture race' '$INC' && grep -q '2026-11-13T12:43:36' '$INC'"
 for sec in "## Feature name" "## Branch name" "## Repo" "## Goal" "## Non-goals" "## Evidence" "## Decisions" "## Quality rules" \

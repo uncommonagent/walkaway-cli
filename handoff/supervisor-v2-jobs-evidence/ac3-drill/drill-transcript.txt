@@ -1,0 +1,47 @@
+[12:20:41] jobs drill start: topic jim-walkaway-jobs-drill-addf5fe6, home /Users/jimross/Projects/walkaway-cli/tests/drill/work-jobs/home
+[12:20:44] scratch owner repos: /Users/jimross/Projects/walkaway-cli/tests/drill/work-jobs/audrey-ops-platform-drill (7da72ae, pre Deals Hub fix), /Users/jimross/Projects/walkaway-cli/tests/drill/work-jobs/throughline-app-drill; origins repointed to /Users/jimross/Projects/walkaway-cli/tests/drill/work-jobs/*-origin.git
+[12:20:44] drill-busy registered in /Users/jimross/Projects/walkaway-cli/tests/drill/work-jobs/nightly-export-drill (pid 37567): holds the one-builder slot so the fix plan queues
+[12:20:44] supervisor tick @ 2026-11-13 07:45 ET (time travel)
+[12:20:45] PASS: bf-daily RETRYING at 07:45 (3 failed attempts inside the 12:00 window)
+[12:20:45] PASS: drill-export RETRYING at 07:45 (3 failed attempts inside the 09:00 window)
+[12:20:45] PASS: showingtime PENDING (missing, no session yet)
+[12:20:45] PASS: extension-reports RETRYING (tracking_offsite error < 2 h)
+[12:20:45] PASS: RETRYING/PENDING sent no ntfy
+[12:20:45] supervisor tick @ 2026-11-13 08:20 ET (time travel)
+[12:20:46] PASS: extension-reports OK after its own retry, no ntfy
+[12:20:46] supervisor tick @ 2026-11-13 09:01 ET (time travel)
+[12:20:47] PASS: drill-export FAILED at 09:01
+[12:21:17] drill-export operator done after 35s: FIXING
+[12:21:17] drill-export decision: FIX BUILD fix-drill-export-20261113 (template v2 plan: /Users/jimross/Projects/walkaway-cli/tests/drill/work-jobs/home/job-fixes/drill-export-2026-11-13/handoff/build-plan-fix-drill-export-20261113.md)
+[12:21:17] PASS: incident file written (cause + evidence)
+[12:21:17] PASS: drill-export FIXING: template-v2 fix plan queued behind drill-busy
+[12:21:17] PASS: fix plan not launched (no registry entry)
+[12:21:17] PASS: plan has the template-v2 sections and names the owner repo
+[12:21:17] supervisor tick @ 2026-11-13 12:01 ET (time travel)
+[12:21:18] PASS: bf-daily FAILED at 12:01
+[12:21:58] bf-daily operator done after 45s: ESCALATED
+[12:21:58] bf-daily decision: ESCALATED (protected action): A fix plan for this failure already exists (bf-deals-ingest-fix, 08:20 today), and it needs a live Deals Hub probe plus a live daily draft run in Audrey's account: run that plan, or no build today?
+[12:21:58] PASS: bf-daily resolved by the operator into FIXING or ESCALATED (one line)
+[12:21:58] supervisor tick @ 2026-11-13 12:46 ET (time travel)
+[12:21:59] PASS: showingtime FAILED at 12:46 (after its 12:45 retry window)
+[12:22:24] showingtime operator done after 30s: ESCALATED
+[12:22:24] PASS: showingtime ESCALATED (protected: OTP/2FA), no fix plan
+[12:22:24] escalation line: job showingtime: ESCALATED - ShowingTime's 2FA code never reached the OTP endpoint on 11/13. Can you log in by hand and check that the code email still reaches Gmail? (yes / no, the 2FA phone or email changed)
+[12:22:24] PASS: ESCALATED is priority high and one line
+[12:22:24] simulated merge of fix-drill-export-20261113 (registry state MERGED)
+[12:22:24] supervisor tick @ 2026-11-13 13:00 ET (time travel)
+[12:22:26] PASS: retry path ran exactly once after the merge
+[12:22:26] supervisor tick @ 2026-11-13 13:02 ET (time travel)
+[12:22:27] supervisor tick @ 2026-11-13 13:04 ET (time travel)
+[12:22:28] PASS: retry did not run again
+[12:22:28] PASS: drill-export OK, exactly one resolved ntfy
+[12:22:28] PASS: bf-daily OK, exactly one resolved ntfy
+[12:22:33] ntfy poll: 9 messages on jim-walkaway-jobs-drill-addf5fe6; local sends: 9
+[12:22:33] PASS: ntfy poll == local send log (1:1)
+[12:22:33] PASS: no transition repeated back-to-back per job/build
+[12:22:33] polled transitions: drill-export [FAILED FIXING OK ] bf-daily [FAILED ESCALATED OK ] showingtime [FAILED ESCALATED ] extension-reports []
+[12:22:33] PASS: drill-export: FAILED, FIXING, OK - one ntfy each
+[12:22:33] PASS: showingtime: FAILED, ESCALATED - one ntfy each
+[12:22:33] PASS: bf-daily: FAILED, FIXING|ESCALATED, OK - one ntfy each
+[12:22:33] PASS: RETRYING / PENDING / own-retry recovery never pinged (extension-reports silent)
+[12:22:34] jobs drill done: 26 passed, 0 failed (topic jim-walkaway-jobs-drill-addf5fe6)

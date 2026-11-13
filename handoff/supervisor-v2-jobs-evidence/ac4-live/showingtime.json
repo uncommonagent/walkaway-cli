@@ -1,0 +1,13 @@
+{
+  "job": "showingtime",
+  "date": "2026-11-13",
+  "state": "OK",
+  "since": 1794590054,
+  "last_action": "2026-11-12 total showings=2390 (first seen 2026-11-13T11:45:43Z); agent decision=SILENT_PRESENT",
+  "last_verdict": "ok",
+  "last_detail": "2026-11-12 total showings=2390 (first seen 2026-11-13T11:45:43Z); agent decision=SILENT_PRESENT",
+  "checked_at": 1794590054,
+  "error_ticks": 0,
+  "last_ok_at": 1794590054,
+  "last_ok_date": "2026-11-13"
+}

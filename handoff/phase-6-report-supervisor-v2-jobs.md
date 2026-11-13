@@ -1,0 +1,26 @@
+# Phase 6 report - supervisor-v2-jobs (real-system smoke)
+
+- **AC2:** live dump of every job check against real Supabase rows (read-only) shows 8/8 OK.
+  - bf-daily 11/13 OK after 5 failed rows.
+  - spc 11/13 ACCEPTED 162/162.
+  - cc-optin-pm proven on the last PM row (10/31).
+  - realtea proven on Mon 11/09.
+  - No keys in the output.
+- **AC3 live drill, 26/26:** real `claude -p` and real ntfy on the drill topic. The poll matches the local send log 1:1 (9/9).
+  - RETRYING and own-retry recovery are silent.
+  - drill-export FAILED → high-confidence fix diagnosis → incident + template-v2 plan queued.
+  - showingtime OTP → ESCALATED with one question, priority high.
+  - Real BF 11/13 rows → escalated: the fix needs live Amazon writes, and a plan already existed.
+  - Resolution → retry once, then one "resolved" ntfy.
+  - The drill was run three times. Run 1 exposed a drill-design bug (showingtime started OK) and a no-fix-path design (real BF needs a protected live action), so the throwaway nightly-export job was added. Run 2 passed. Run 3 re-archived the evidence on the final code after two formatting fixes.
+- **AC4 live:** job watching turned ON at 12:13:47 via `install-supervisor.sh --jobs-on`.
+  - The launchd tick at 12:14:13 moved 5 jobs to OK on real rows with 0 ntfy.
+  - `walkaway status` JOBS table archived (12:16 and final).
+  - The supervisor runs from this tree, so the job watch uses this branch's code until merge; main has the same code after it.
+- **AC1** re-archived (12/12 vs pre-fix 1/12). **AC5:** shellcheck 0, 167/167.
+- **Fixes from the smoke:**
+  - incident false-flag rendering (+ regression check)
+  - FIXING ntfy cause text (first sentence)
+  - drill fixture/order
+- Evidence: handoff/smoke-results-supervisor-v2-jobs.md and handoff/supervisor-v2-jobs-evidence/{ac1-*, ac2-*, ac3-drill/, ac4-live/, ac5-gates.txt}.
+- **Files:** lib/job-operator.sh, tests/test-job-operator.sh, tests/drill/run-jobs-drill.sh, plus evidence and reports.
