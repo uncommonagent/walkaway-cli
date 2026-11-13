@@ -1,0 +1,279 @@
+# Scheduled daily jobs the walkaway supervisor watches (lib/jobs.sh). One entry per job.
+#
+# Every job was discovered and confirmed against real rows in Phase 0 of supervisor-v2-jobs
+# (handoff/supervisor-v2-jobs-evidence/phase0-job-discovery.md). Times are local (America/New_York, the Mini).
+#
+#   name          job id (state files, incidents, ntfy lines)
+#   enabled       false = listed, never checked (e.g. a session the owner turned off)
+#   owner_repo    repo that fix builds for this job run in
+#   days          weekdays the job runs (mon..sun); omitted = every day
+#   kind          daily   = must be OK once per day by retry_end
+#                 rolling = continuous health; RETRYING longer than retry_window_mins = FAILED
+#   window        when the job's scheduled attempts run (start..end); before start nothing is expected yet
+#   retry_end     the job's own retry window ends here: not OK after this = FAILED (daily jobs)
+#   protected     the job's live action is a PROTECTED action (customer-facing write, live account action,
+#                 publish): never auto-triggered, and a fix whose cause or verification touches it ESCALATES
+#   quality_rules domain quality-rules file every fix plan for this job must cite (null = none)
+#   retry         {command, note}: the job's safe retry path, run once after a fix build merges (null = none)
+#   check         read-only health check: REST GETs (service-role key read from the source's env file at run
+#                 time, never logged) + optional log greps, then a jq predicate over
+#                 {date, yesterday, now_utc, since_26h_utc, q: {<query>: rows}, log: {<log>: [lines]}}
+#                 that returns {verdict: ok|pending|retrying|failed, detail}
+#                   ok       the job succeeded for this day
+#                   pending  nothing to judge yet (not run / in progress)
+#                   retrying a failed attempt the job will retry by itself
+#                   failed   a terminal failure the job will not retry today
+#   diagnose      extra read-only queries/logs + pointers the operator reads when the job FAILS
+#
+# Placeholders in queries and greps: {date} (job day, ET), {yesterday}, {day_start_utc}, {day_end_utc},
+# {since_26h_utc}, and every key under vars.
+
+vars:
+  audrey_user: d3a83609-87a8-46aa-aa74-a2105d275748   # BF_LISTS_USER_ID default, scripts/bf-lists-mini.ts:46
+  pulse_team: d14dce4f-9111-45e7-a52d-18d5f6dd04b6    # PULSE_TEAM_ID, throughline lib/newsletter/data.ts:41
+
+sources:
+  audrey:
+    env_file: ~/Projects/audrey-ops-platform/.env.local
+    url_var: NEXT_PUBLIC_SUPABASE_URL
+    key_var: SUPABASE_SERVICE_ROLE_KEY
+  throughline:
+    env_file: ~/Projects/Throughline/throughline-app/.env.local
+    url_var: NEXT_PUBLIC_SUPABASE_URL
+    key_var: SUPABASE_SERVICE_ROLE_KEY
+
+jobs:
+  - name: bf-daily
+    title: BF daily lists
+    enabled: true
+    owner_repo: ~/Projects/audrey-ops-platform
+    kind: daily
+    window: {start: "06:30", end: "12:00"}
+    retry_end: "12:00"
+    protected: false
+    quality_rules: ~/Projects/ops/handoff/quality-rules/showrunner-lists.md
+    retry: null   # no run-now path exists; the extension retries every 30 min until noon by itself
+    check:
+      source: audrey
+      queries:
+        runs: "bf_runs?select=started_at,finished_at,ok,line,error:summary->>error&user_id=eq.{audrey_user}&kind=eq.daily&started_at=gte.{day_start_utc}&started_at=lt.{day_end_utc}&order=started_at.desc"
+      predicate: |
+        .q.runs as $r
+        | ($r | map(select(.ok == true))) as $ok
+        | ($r | map(select(.ok == false))) as $bad
+        | if ($ok | length) > 0 then {verdict: "ok", detail: ($ok[0].started_at[0:19] + "Z " + ($ok[0].line // ""))}
+          elif ($bad | length) > 0 and (($bad[0].error // "") | startswith("STOP:")) then
+            {verdict: "failed", detail: ("STOP (not retried today): " + $bad[0].error)}
+          elif ($bad | length) > 0 then
+            {verdict: "retrying", detail: ("\($bad | length) failed attempt(s); latest " + $bad[0].started_at[0:19] + "Z: " + ($bad[0].error // $bad[0].line // ""))}
+          elif ($r | length) > 0 then {verdict: "pending", detail: "attempt in progress since \($r[0].started_at[0:19])Z"}
+          else {verdict: "pending", detail: "no daily run yet"} end
+    diagnose:
+      queries:
+        runs_full: "bf_runs?select=started_at,finished_at,ok,line,summary&user_id=eq.{audrey_user}&kind=eq.daily&started_at=gte.{day_start_utc}&started_at=lt.{day_end_utc}&order=started_at.desc&limit=6"
+        daily_list: "bf_lists?select=slug,kind,state,error,list_date,drafted_at,updated_at&user_id=eq.{audrey_user}&list_date=eq.{date}"
+      notes:
+        - "Scheduler: extension/bf-lists-lib.js dailyDue (06:30-12:00, 30-min retry keyed on bfDailyAttemptAt); tick extension/background.js:1667-1721"
+        - "Runner: extension/bf-lists-lib.js runDaily (deals capture, inventory, create/refresh, publishPending, curations); run row via POST /api/ingest/bf-lists/run-result"
+        - "Extension code changes need a reload at chrome://extensions on the Mini to take effect"
+
+  - name: cc-optin-am
+    title: CC opt-in AM session
+    enabled: true
+    owner_repo: ~/Projects/audrey-ops-platform
+    kind: daily
+    window: {start: "09:00", end: "15:30"}
+    retry_end: "15:45"   # plan said 12:00; 11/05 AM was DONE 13:26 ET. The session rolls at 15:30.
+    protected: true      # opt-ins are live actions on Audrey's Amazon account
+    quality_rules: null
+    retry: null
+    check:
+      source: audrey
+      queries:
+        run: "cc_optin_runs?select=run_date,session,status,halted_reason,export_rows,updated_at&user_id=eq.{audrey_user}&session=eq.am&run_date=eq.{date}"
+      predicate: |
+        (.q.run[0] // null) as $r
+        | if $r == null then {verdict: "pending", detail: "no AM run row yet"}
+          elif $r.status == "DONE" then {verdict: "ok", detail: ("DONE " + $r.updated_at[0:19] + "Z" + (if $r.halted_reason then " (" + $r.halted_reason + ")" else "" end))}
+          elif $r.status == "HALTED" then {verdict: "failed", detail: ("HALTED: " + ($r.halted_reason // "no reason"))}
+          else {verdict: "pending", detail: ($r.status + " since " + $r.updated_at[0:19] + "Z")} end
+    diagnose:
+      queries:
+        run_batches: "cc_optin_runs?select=status,halted_reason,export_rows,updated_at,cc_optin_batches(seq,status,attempts,last_error,submitted_count,accepted_count,failed_count,submitted_at,completed_at)&user_id=eq.{audrey_user}&session=eq.am&run_date=eq.{date}"
+        recent: "cc_optin_runs?select=run_date,session,status,halted_reason,updated_at&user_id=eq.{audrey_user}&order=run_date.desc&limit=7"
+      notes:
+        - "Engine: extension/cc-optin-lib.js (sessions, export retries 3x10 min, 429 backoff 15/30/60 then HALT); server: src/app/api/ingest/cc-optin/{export,batch-result}/route.ts"
+        - "Rules are LOCKED in handoff/DECISIONS.md (2026-10-24..10-31 CC opt-in entries)"
+
+  - name: cc-optin-pm
+    title: CC opt-in PM session
+    enabled: false   # PM session OFF since 10/31 (Jim): extension/cc-optin-lib.js:26-29 pmSessionEnabled = false
+    owner_repo: ~/Projects/audrey-ops-platform
+    kind: daily
+    window: {start: "15:30", end: "19:00"}
+    retry_end: "19:30"
+    protected: true
+    quality_rules: null
+    retry: null
+    check:
+      source: audrey
+      queries:
+        run: "cc_optin_runs?select=run_date,session,status,halted_reason,export_rows,updated_at&user_id=eq.{audrey_user}&session=eq.pm&run_date=eq.{date}"
+      predicate: |
+        (.q.run[0] // null) as $r
+        | if $r == null then {verdict: "pending", detail: "no PM run row yet"}
+          elif $r.status == "DONE" then {verdict: "ok", detail: ("DONE " + $r.updated_at[0:19] + "Z" + (if $r.halted_reason then " (" + $r.halted_reason + ")" else "" end))}
+          elif $r.status == "HALTED" then {verdict: "failed", detail: ("HALTED: " + ($r.halted_reason // "no reason"))}
+          else {verdict: "pending", detail: ($r.status + " since " + $r.updated_at[0:19] + "Z")} end
+    diagnose:
+      notes:
+        - "PM plans from campaign/search per DECISIONS.md 2026-10-27; disabled until that lands"
+
+  - name: spc
+    title: SPC opt-ins
+    enabled: true
+    owner_repo: ~/Projects/audrey-ops-platform
+    kind: daily
+    window: {start: "09:00", end: "19:00"}
+    retry_end: "17:30"
+    protected: true      # opt-ins are live actions on Audrey's Amazon account
+    quality_rules: null
+    retry: null
+    check:
+      source: audrey
+      queries:
+        run: "cc_spc_optins?select=run_date,status,listed,accepted,failed,remaining,detail,updated_at&user_id=eq.{audrey_user}&run_date=eq.{date}"
+      predicate: |
+        (.q.run[0] // null) as $r
+        | if $r == null then {verdict: "pending", detail: "no SPC row yet (runs after the AM session, or 15:00)"}
+          elif ($r.status | IN("ACCEPTED", "NOTHING_NEW")) then {verdict: "ok", detail: "\($r.status) \($r.accepted)/\($r.listed) at \($r.updated_at[0:19])Z"}
+          elif $r.status == "IN_PROGRESS" then {verdict: "pending", detail: "IN_PROGRESS since \($r.updated_at[0:19])Z"}
+          elif $r.status == "UNFINISHED" then {verdict: "failed", detail: "UNFINISHED: \($r.detail // "")"}
+          else {verdict: "retrying", detail: "\($r.status) accepted \($r.accepted)/\($r.listed), failed \($r.failed), remaining \($r.remaining): \($r.detail // "")"} end
+    diagnose:
+      notes:
+        - "Engine: extension/cc-optin-spc-lib.js (verify 3x5 min, 429 backoff); server: src/app/api/ingest/cc-optin/spc-result/route.ts; rules handoff/DECISIONS.md:3-8"
+
+  - name: extension-reports
+    title: Showrunner extension report pulls
+    enabled: true
+    owner_repo: ~/Projects/audrey-ops-platform
+    kind: rolling
+    retry_window_mins: 120   # an error state persisting > 2 h = FAILED
+    window: {start: "00:00", end: "23:59"}
+    protected: false
+    quality_rules: null
+    retry: null   # run-now needs a logged-in browser session; the extension re-sends every 30 min in its window
+    check:
+      source: audrey
+      queries:
+        state: "extension_report_state?select=report_type,last_success_at,last_error_at,last_error_message,updated_at&user_id=eq.{audrey_user}"
+      predicate: |
+        ["tracking_offsite", "tracking_onsite", "tracking_offsite_today", "bounty", "cc_morning", "cc_evening",
+         "spc_morning", "spc_evening", "connect_summary_morning", "connect_summary_evening"] as $types
+        | .since_26h_utc as $since
+        | (.q.state | map({key: .report_type, value: .}) | from_entries) as $by
+        | "dispatch pending - awaiting terminal result" as $marker
+        | [$types[] | select(($by[.].last_success_at // "")[0:19] < $since)] as $stale
+        | [$types[] | $by[.] // empty
+            | select(.last_error_at != null and (.last_error_message == ($marker + " (prev: error)")
+                or (.last_error_message != $marker and (.last_success_at == null or .last_error_at[0:19] > .last_success_at[0:19]))))
+            | "\(.report_type) (error \(.last_error_at[0:19])Z: \((.last_error_message // "")[0:80]))"] as $err
+        | if ($stale | length) > 0 then {verdict: "failed", detail: ("no success in 26 h: " + ($stale | join(", ")))}
+          elif ($err | length) > 0 then {verdict: "retrying", detail: ("in error: " + ($err | join("; ")))}
+          else {verdict: "ok", detail: "\($types | length) report types succeeded within 26 h, none in error"} end
+    diagnose:
+      notes:
+        - "Error state rule: src/lib/monitoring/extension-errors.ts isInErrorState (plain dispatch marker = in flight, not an error)"
+        - "Schedule: poll route src/app/(app)/api/integrations/extension/poll/route.ts (07:00-10:00 and 20:00-23:00 windows, 30-min cooldown)"
+
+  - name: showingtime
+    title: ShowingTime daily showings pull
+    enabled: true
+    owner_repo: ~/Projects/Throughline/throughline-app
+    kind: daily
+    window: {start: "06:00", end: "12:30"}
+    due: "07:30"         # expected by (plan); the extension still retries failed dates at 09:30 and 12:30
+    retry_end: "12:45"
+    protected: false
+    quality_rules: null
+    retry:
+      command: open -g -a "Google Chrome" "https://throughlinepro.com/#tl-ext-run-daily"
+      note: "URL trigger the st-login-agent itself uses (tools/login-agent/st-login-agent.sh:26,117); pulls ShowingTime into pulse_showings_daily"
+    check:
+      source: throughline
+      queries:
+        show: "pulse_showings_daily?select=obs_date,showings,source,first_seen_at&is_total=eq.true&obs_date=eq.{yesterday}"
+        attempts: "st_session_attempts?select=outcome,trigger,started_at,rows,dates_failed&attempt_date=eq.{date}&order=started_at.desc&limit=5"
+      logs:
+        agent:
+          path: /tmp/st-login-agent.log
+          grep: "^{date} [0-9:]{8} decision=[A-Z_]+ yesterday={yesterday} "
+      predicate: |
+        ((.log.agent | last // "") | capture("decision=(?<d>[A-Z_]+)").d // "none") as $dec
+        | (.q.attempts[0] // null) as $a
+        | if (.q.show | length) > 0 then
+            {verdict: "ok", detail: "\(.yesterday) total showings=\(.q.show[0].showings) (first seen \(.q.show[0].first_seen_at[0:19])Z); agent decision=\($dec)"}
+          elif $a == null then {verdict: "pending", detail: "\(.yesterday) missing; extension has not reported a session today; agent decision=\($dec)"}
+          else {verdict: "retrying", detail: "\(.yesterday) missing; last session \($a.outcome)/\($a.trigger) at \($a.started_at[0:19])Z (dates_failed \($a.dates_failed)); agent decision=\($dec)"} end
+    diagnose:
+      logs:
+        agent_tail: {path: /tmp/st-login-agent.log, grep: "^{date} "}
+      notes:
+        - "Agent decisions: tools/login-agent/agent-decide.sh:27-42 (ACT_* = the agent had to act: login failed / OTP timeout / never ran)"
+        - "Extension: tools/showings-daily-pull/{pull-core.js,background.js}; ingest app/api/showingtime/daily-ingest/route.ts"
+        - "OTP / 2FA / ShowingTime credentials are PROTECTED: escalate"
+
+  - name: realtea-generate
+    title: Monday RealTea issue generated
+    enabled: true
+    owner_repo: ~/Projects/Throughline/throughline-app
+    days: [mon]
+    kind: daily
+    window: {start: "05:30", end: "09:00"}
+    retry_end: "09:15"   # plan said 08:30; 11/09 issue 71 generated 08:31 ET. Data-gate cap is 09:00.
+    protected: false
+    quality_rules: null
+    retry: null   # a re-fire is an Inngest event (newsletter/monday.rerun); left to Jim
+    check:
+      source: throughline
+      queries:
+        issue: "pulse_newsletter_issues?select=issue_no,week_end,status,created_at,generated_at:content->substack->>generatedAt&team_id=eq.{pulse_team}&week_end=eq.{yesterday}"
+        runs: "monday_run_reports?select=status,issue_no,gate_blocked_reason,failure_reason,auto_refired_at,started_at,finished_at&team_id=eq.{pulse_team}&week_end=eq.{yesterday}&order=started_at.desc&limit=3"
+      predicate: |
+        (.q.issue[0] // null) as $i | (.q.runs[0] // null) as $r
+        | if $i != null and $i.generated_at != null then {verdict: "ok", detail: "issue #\($i.issue_no) week_end \($i.week_end) generated \($i.generated_at[0:19])Z"}
+          elif $r == null then {verdict: "pending", detail: "no Monday run for week_end \(.yesterday) yet"}
+          elif $r.status == "running" then {verdict: "pending", detail: "run in progress since \($r.started_at[0:19])Z"}
+          else {verdict: "retrying", detail: "latest run \($r.status): \($r.gate_blocked_reason // $r.failure_reason // "no reason")"} end
+    diagnose:
+      notes:
+        - "Generator: inngest/functions/monday-autorun.ts (cron Mon 05:30 ET, data gate to 09:00); fallback launchd com.throughline.monday-fallback 06:20 (/tmp/monday-fallback.log)"
+        - "monday_run_reports.stage_outcomes holds per-stage results"
+
+  - name: realtea-publish
+    title: Monday RealTea published to Substack
+    enabled: true
+    owner_repo: ~/Projects/Throughline/throughline-app
+    days: [mon]
+    kind: daily
+    window: {start: "07:00", end: "10:00"}
+    retry_end: "10:15"   # plan said 10:00; the publisher polls until 10:00 and a publish takes minutes
+    protected: true      # Substack publish is customer-facing
+    quality_rules: null
+    retry: null
+    check:
+      source: throughline
+      queries:
+        issue: "pulse_newsletter_issues?select=issue_no,week_end,generated_at:content->substack->>generatedAt,substack_url:content->>substackUrl&team_id=eq.{pulse_team}&week_end=eq.{yesterday}"
+      predicate: |
+        (.q.issue[0] // null) as $i
+        | if $i != null and ($i.substack_url // "") != "" then {verdict: "ok", detail: "issue #\($i.issue_no) published: \($i.substack_url | split("?")[0])"}
+          elif $i == null then {verdict: "pending", detail: "no issue for week_end \(.yesterday) yet"}
+          else {verdict: "pending", detail: "issue #\($i.issue_no) generated, not published yet"} end
+    diagnose:
+      logs:
+        publisher: {path: /tmp/substack-publisher.log, grep: "."}
+      notes:
+        - "Publisher: tools/substack-publisher/src/{cli,plan,data}.ts (launchd com.throughline.substack-publisher Mon 07:00, polls to 10:00); evidence /tmp/substack-publisher/<ts>/"
+        - "A republish is customer-facing (PROTECTED): escalate"
