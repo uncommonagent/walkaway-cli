@@ -48,7 +48,7 @@ PASS=0
 FAIL=0
 check() { local label="$1"; shift; if "$@"; then say "PASS: $label"; PASS=$((PASS + 1)); else say "FAIL: $label"; FAIL=$((FAIL + 1)); fi; }
 
-export WALKAWAY_HOME="$WORK/home" NTFY_TOPIC="$TOPIC" WALKAWAY_HEARTBEAT_HOURS="" WALKAWAY_JOBS_FILE="$WORK/jobs.yaml"
+export WALKAWAY_HOME="$WORK/home" NTFY_TOPIC="$TOPIC" WALKAWAY_HEARTBEAT_HOURS=off WALKAWAY_JOBS_FILE="$WORK/jobs.yaml"
 export WALKAWAY_JOBS_REST_FIXTURES="$WORK/rest" WALKAWAY_GH_CMD="$HERE/gh-sim.sh" GH_SIM_DIR="$WORK/gh"
 export WALKAWAY_CLAUDE_PROJECTS="$WORK/none" WALKAWAY_LAUNCH_LOG_DIR="$WORK/logs"
 # drill-busy is a sleep standing in for a builder: never let it read as STALLED while claude diagnoses.

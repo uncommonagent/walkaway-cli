@@ -145,6 +145,17 @@ WALKAWAY_JOB_OPERATOR="$W/op-silent.sh" WALKAWAY_JOBS_NOW=$(at "2026-11-13 12:01
 WALKAWAY_JOB_OPERATOR="$W/op-silent.sh" WALKAWAY_JOBS_NOW=$(at "2026-11-13 12:03") bash "$ROOT/lib/jobs.sh" tick >> "$W/tick.log" 2>&1
 check "silent operator -> ESCALATED once" [ "$(st bf-daily state)/$(ntfy bf-daily ESCALATED)" == "ESCALATED/1" ]
 
+echo "S6c (Codex cycle 2) a diagnosis still running at midnight keeps its pid: the new day waits for it"
+fresh s6c
+sleep 60 > /dev/null 2>&1 &
+opp=$!
+bash -c "source '$ROOT/lib/jobs.sh'; jstate_update bf-daily '.date = \"2026-11-13\" | .state = \"FAILED\" | .since = 0 | .operator_pid = $opp | .operator_spawned = true'"
+tick "2026-11-14 00:05"
+check "rollover kept operator_pid; the tick waited for the running operator" [ "$(st bf-daily date)/$(st bf-daily operator_pid)/$(st bf-daily last_action)" == "2026-11-14/$opp/job operator running" ]
+kill "$opp" 2>/dev/null; wait "$opp" 2>/dev/null
+tick "2026-11-14 00:07"
+check "operator gone: the day proceeds" [ "$(st bf-daily last_action)" == "window opens 06:30" ]
+
 echo "S7 walkaway status JOBS table"
 out=$(WALKAWAY_JOBS_NOW=$(at "2026-11-17 13:00") bash "$ROOT/walkaway.sh" status)
 check "JOBS header + every job row" bash -c "grep -q '^JOBS (2026-11-17' <<< \"\$1\" && for j in bf-daily cc-optin-am cc-optin-pm spc extension-reports showingtime realtea-generate realtea-publish; do grep -q \"^\$j \" <<< \"\$1\" || exit 1; done" _ "$out"

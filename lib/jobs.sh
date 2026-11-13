@@ -262,7 +262,8 @@ jobs_transition() {
   esac
 }
 
-# New local day for a daily job: carry an unresolved failure, keep fix tracking, reset the day.
+# New local day for a daily job: carry an unresolved failure, keep fix tracking, reset the day. A diagnosis still
+# running keeps its operator_pid (it deletes it on exit), so jobs_evaluate waits for it instead of racing it.
 _jobs_rollover() {
   local job="$1" today="$2" prev pstate
   prev=$(jstate_get "$job" .date); pstate=$(jstate_get "$job" .state)
@@ -276,7 +277,7 @@ _jobs_rollover() {
       | .last_action = ("new day" + (if $c != "" then "; " + $c + " unresolved" else "" end)
                        + (if $f != "" then "; fix " + $f + " still in flight" else "" end))
       | (if $c != "" then .unresolved_from = $c else . end)
-      | del(.retrying_since, .operator_pid, .operator_spawned, .incident)' \
+      | del(.retrying_since, .operator_spawned, .incident)' \
     --arg d "$today" --arg c "$carry" --arg f "$fix" --arg now "$(_jobs_now)"
 }
 

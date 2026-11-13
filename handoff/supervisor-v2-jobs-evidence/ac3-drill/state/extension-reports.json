@@ -2,12 +2,12 @@
   "job": "extension-reports",
   "date": "2026-11-13",
   "state": "OK",
-  "since": 1794576013,
+  "since": 1794576027,
   "last_action": "10 report types succeeded within 26 h, none in error",
   "last_verdict": "ok",
   "last_detail": "10 report types succeeded within 26 h, none in error",
-  "checked_at": 1794593091,
+  "checked_at": 1794593065,
   "error_ticks": 0,
-  "last_ok_at": 1794593091,
+  "last_ok_at": 1794593065,
   "last_ok_date": "2026-11-13"
 }

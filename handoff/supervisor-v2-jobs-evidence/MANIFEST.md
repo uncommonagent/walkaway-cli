@@ -24,7 +24,7 @@ relative to handoff/supervisor-v2-jobs-evidence/ unless noted otherwise.
 
 ## AC3: drill on fixtures, exactly one ntfy per transition (drill topic)
 Drill directory: `ac3-drill/`, produced by `tests/drill/run-jobs-drill.sh` using real `claude -p` and real ntfy. Result: 26/26.
-Phase 6 ran on topic jim-walkaway-jobs-drill-addf5fe6. Phase 7 re-ran it on the Codex-fixed code (topic jim-walkaway-jobs-drill-fbe389ee, 12:51 ET): 26/26, 9 polled == 9 sent; `ac3-drill/` now holds that run.
+Phase 6 ran on topic jim-walkaway-jobs-drill-addf5fe6. Phase 7 re-ran it on the Codex-fixed code (topic jim-walkaway-jobs-drill-fbe389ee, 12:51 ET): 26/26, 9 polled == 9 sent; A final re-run on the cycle-2 code (topic jim-walkaway-jobs-drill-38ee6b0f, 13:25 ET) was also 26/26 with 9 polled == 9 sent; `ac3-drill/` holds that final run.
 
 | Requirement | Evidence |
 |---|---|
@@ -57,7 +57,7 @@ Unit level, fixture-based with no network or model: tests/test-jobs-states.sh 36
   | operator | 68/68 |
 
   Total: 167 checks, all passing.
-- Phase 7 (after the Codex cycle 1 fixes) re-run: `ac5-gates-final.txt`. shellcheck rc=0; parse 7/7, states 18/18, AC1 12/12, jobs-states 36/36, job-operator 37/37, operator 68/68 = 178 checks, all passing; drill 26/26.
+- Phase 7 final re-run (after the Codex cycle 1 fixes and the cycle 2 P2 fix): `ac5-gates-final.txt`. shellcheck rc=0; parse 7/7, states 18/18, AC1 12/12, jobs-states 38/38, job-operator 37/37, operator 68/68 = 180 checks, all passing; drill 26/26.
 
 ## Codex cycle 1 fixes (Phase 7): each regression fails on 4d5c8e2, passes after
 Regression scenarios J7-J9 in tests/test-job-operator.sh (11 checks).
@@ -66,3 +66,8 @@ Regression scenarios J7-J9 in tests/test-job-operator.sh (11 checks).
   - J8 (P2, rollover): the retry never ran after the day-2 merge.
   - J9 (P2, queued fix): a second plan was written and `.fix_feature` was overwritten.
 - `codex1-regression-pass-after-fix.txt`: the same tests on the fix, 37/37. J7: one build registered, the other plan alone in the queue, both jobs FIXING (launched / queued behind), the lock released.
+
+## Codex cycle 2 fix (Phase 7): regression fails on fd20bd9, passes after
+- `codex2-regression-fail-on-fd20bd9.txt`: the new tests/test-jobs-states.sh run against a scratch worktree of fd20bd9. Result 37/38: S6c fails, because the rollover dropped a running diagnosis's operator_pid.
+- After the fix: 38/38 (`ac5-gates-final.txt`).
+- The other cycle 2 P2 (stale-lock takeover race) is documented in ../codex-review-supervisor-v2-jobs.md and ROADMAP.md.

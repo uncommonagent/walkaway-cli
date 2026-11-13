@@ -2,15 +2,15 @@
   "job": "bf-daily",
   "date": "2026-11-13",
   "state": "OK",
-  "since": 1794592970,
+  "since": 1794592944,
   "last_action": "2026-11-13T14:21:05Z BF lists daily 11/13: OK | deals 15000 (31435 live) from dealshub | drafts 1/1 | curations early_bf 0 ops ok, gift_guides 0 ops ok",
   "last_verdict": "ok",
   "last_detail": "2026-11-13T14:21:05Z BF lists daily 11/13: OK | deals 15000 (31435 live) from dealshub | drafts 1/1 | curations early_bf 0 ops ok, gift_guides 0 ops ok",
-  "checked_at": 1794592970,
+  "checked_at": 1794592944,
   "error_ticks": 0,
   "failed_detail": "not OK by 12:00: 3 failed attempt(s); latest 2026-11-13T12:43:36Z: BF lists daily 11/13: FAILED | deals 39 (39 live) from node | drafts 0/1 | curations early_bf 0 ops ok, gift_guides 0 ops ok | errors: export: deals hub capture: listDealsExports call not seen in 15 s (+1)",
   "operator_spawned": true,
   "incident": "/Users/jimross/Projects/walkaway-cli/tests/drill/work-jobs/home/job-fixes/bf-daily-2026-11-13/handoff/job-incident-bf-daily-2026-11-13.md",
-  "last_ok_at": 1794592970,
+  "last_ok_at": 1794592944,
   "last_ok_date": "2026-11-13"
 }

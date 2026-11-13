@@ -1,31 +1,32 @@
 # Job incident - bf-daily - 2026-11-13
 
-Written by the walkaway job operator (read-only diagnosis) at 2026-11-13 12:51 ET.
+Written by the walkaway job operator (read-only diagnosis) at 2026-11-13 13:24 ET.
 
 ## Failure
 not OK by 12:00: 3 failed attempt(s); latest 2026-11-13T12:43:36Z: BF lists daily 11/13: FAILED | deals 39 (39 live) from node | drafts 0/1 | curations early_bf 0 ops ok, gift_guides 0 ops ok | errors: export: deals hub capture: listDealsExports call not seen in 15 s (+1)
 
 ## Cause
-All three daily attempts (11:30Z, 12:06Z, 12:43Z) failed for the same two linked reasons, so this was not transient. (1) The Deals Hub export capture failed. pageDealsHubCapture (extension/bf-lists-lib.js:251-283) found and clicked #recentExportsButton, since the error is not the 'no Recent exports button' reason. But its XHR hook (line 264) never saw a /listDealsExports? request within 60x250ms, so it timed out at line 277. pullDealsExport (line 309) then returned 'deals hub capture: …'. Likely cause: Amazon changed the Deals Hub page, for example by sending the call through fetch() instead of XHR, renaming the request, or timing it differently. The hook only patches XMLHttpRequest. I can't confirm which change without a live, logged-in probe of the page. (2) The run fell back to the node scrape (line 366-378) and got only 39-45 deals. Node rows have no lowest_price_ytd/lowest_30d (line 245), so the 20% dealFloor (src/lib/bf-lists/build.ts:88-108, :179) and the lane filter left nothing. finalize returned an empty `after`, and createOne failed with 'no candidate is on deal on amazon.com right now' (bf-lists-lib.js:505). No daily draft exists (daily_list rows = []). A build plan for this exact incident is already committed: 7da72ae handoff/build-plan-bf-deals-ingest-fix.md, 08:20 ET today, not yet built (no feature/bf-deals-ingest-fix branch). That plan needs a live read-only probe in Audrey's logged-in Deals Hub session. Its AC3 also needs a live daily run that creates a draft list on Audrey's Amazon account, which is a protected list write. A second fix plan from me would duplicate it.
+All 3 daily attempts on 11/13 (11:30, 12:06, 12:43 UTC) failed the same way. First, the Deals Hub export capture timed out. pageDealsHubCapture (extension/bf-lists-lib.js:250-283) clicks #recentExportsButton and waits for an XMLHttpRequest to /listDealsExports. That request was never seen, so the code returned 'listDealsExports call not seen in 15 s' (line 277). The deals ingest then fell back to the node scrape (ingestDeals, lines 364-378), which found only 39-45 deals. Node tiles carry no lowest_price_ytd or lowest_30d (dealFromNodeTile, line 245), so dealFloor (src/lib/bf-lists/build.ts:88-108) can only check them against list price. After poolFor's lane filter and the 20% deal floor (build.ts:179, added in #27 on 11/12), nothing was left. createOne then reported 'no candidate is on deal on amazon.com right now' (bf-lists-lib.js:505) and no daily-2026-11-13 row exists in bf_lists. The capture code has not changed since #25 (git log on extension/bf-lists-lib.js; #27 did not touch pageDealsHubCapture), and the export worked on 11/12. So the trigger is a change on Amazon's Deals Hub page, for example the page now using fetch instead of XHR, or the Recent exports flow changing. Which change it is can only be confirmed by probing the live Deals Hub page in Audrey's logged-in session. Proving any fix also needs a live daily run that writes a draft to Audrey's Amazon account. That is a protected live write, so I am escalating rather than queuing a fix. A build plan for this exact incident already exists: handoff/build-plan-bf-deals-ingest-fix.md (commit 7da72ae, 08:20 ET today). Its step 0 is that live probe and its step 3 runs the daily live.
 
 ## Evidence
-- bf_runs 2026-11-13T11:30:35Z ok=false summary.deals={live:45,rows:45,source:'node',error:'export: deals hub capture: listDealsExports call not seen in 15 s'} created=[{slug:'daily-2026-11-13',status:'failed',error:'no candidate is on deal on amazon.com right now'}]
-- bf_runs 2026-11-13T12:06:37Z ok=false deals live 39 source node, same two errors
-- bf_runs 2026-11-13T12:43:36Z ok=false deals live 39 source node, same two errors
-- bf_lists list_date=2026-11-13: 0 rows (no daily draft)
-- extension/bf-lists-lib.js:264 XHR-only hook matching /\/listDealsExports\?/
-- extension/bf-lists-lib.js:277 timeout reason 'listDealsExports call not seen in 15 s'
-- extension/bf-lists-lib.js:245 node-fallback deals have lowest_price_ytd/lowest_30d null
-- extension/bf-lists-lib.js:366-378 node fallback path (source 'node', error 'export: …')
-- extension/bf-lists-lib.js:505 'no candidate is on deal on amazon.com right now'
-- src/lib/bf-lists/build.ts:88-108,179 dealFloor 20% applied to daily list
-- git 7da72ae handoff/build-plan-bf-deals-ingest-fix.md: existing plan for this incident; AC3 requires a live daily run creating today's draft; no feature branch exists yet
+- bf_runs 2026-11-13T11:30:35Z ok=false: deals 45 live, source node, deals.error='export: deals hub capture: listDealsExports call not seen in 15 s', created daily-2026-11-13 failed 'no candidate is on deal on amazon.com right now'
+- bf_runs 2026-11-13T12:06:37Z ok=false: same, deals 39 live from node, same capture error and same create failure
+- bf_runs 2026-11-13T12:43:36Z ok=false: same, deals 39 live from node, export_id null
+- bf_lists list_date=2026-11-13: [] (no daily draft row)
+- extension/bf-lists-lib.js:264: the hook watches XMLHttpRequest only, for /listDealsExports?
+- extension/bf-lists-lib.js:277: timeout after 60x250ms with reason 'listDealsExports call not seen in 15 s'
+- extension/bf-lists-lib.js:364-378 ingestDeals: node fallback, scrapeNodes(CANDIDATE_NODES, 2), discount>=30 and rating>=4.2 filter
+- extension/bf-lists-lib.js:245 dealFromNodeTile: lowest_price_ytd and lowest_30d are null
+- src/lib/bf-lists/build.ts:179 poolFor: lane filter plus dealFloor(d).ok for the daily list (added in 6902668, #27, 11/12 16:52)
+- extension/bf-lists-lib.js:505 createOne: empty fin.after gives the 'no candidate is on deal' error
+- git log -- extension/bf-lists-lib.js: capture code unchanged since 0944eff (#25), when the export worked (11/12: 29,148 live deals per the build plan)
+- handoff/build-plan-bf-deals-ingest-fix.md (7da72ae): an existing plan for this incident, including a live Deals Hub probe (step 0) and a live daily draft run (step 3)
 
 ## Decision
-ESCALATED (protected action): Deals Hub export broke (all 3 runs fell back to 39-45 node deals, so no daily draft). bf-deals-ingest-fix is already planned, but it needs a live Deals Hub probe and a live draft create on Audrey's Amazon. Queue it: yes/no?
+ESCALATED (protected action): The Deals Hub export broke (Amazon page change) and the bf-deals-ingest-fix plan (7da72ae) is already written; may its builder probe Deals Hub live and run the daily to create today's draft on Audrey's account: yes or hold?
 - confidence: medium; protected_hit: true; needs_live_action: true
 
-## Check rows (read-only, 2026-11-13T17:01:50Z)
+## Check rows (read-only, 2026-11-13T17:01:59Z)
 - query runs: `bf_runs?select=started_at,finished_at,ok,line,error:summary->>error&user_id=eq.d3a83609-87a8-46aa-aa74-a2105d275748&kind=eq.daily&started_at=gte.2026-11-13T05:00:00Z&started_at=lt.2026-11-14T05:00:00Z&order=started_at.desc`
 
 ```json

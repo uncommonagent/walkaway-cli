@@ -1,6 +1,6 @@
-[2026-11-13 12:50:51] job-operator diagnose bf-daily 2026-11-13
-[2026-11-13 12:51:22] jobs: bf-daily: FAILED -> ESCALATED - Deals Hub export broke (all 3 runs fell back to 39-45 node deals, so no daily draft). bf-deals-ingest-fix is already planned, but it needs a live Deals Hub probe and a live draft create on Audrey's Amazon. Queue it: yes/no?
-[2026-11-13 12:50:15] job-operator diagnose drill-export 2026-11-13
-[2026-11-13 12:50:46] jobs: drill-export: FAILED -> FIXING - cause: All 3 export_runs rows for 2026-11-13 (11:00:02Z, 11:30:03Z, 12:00:04Z) have ok=false, total=null and error "total is NaN (scripts/nightly-export.js:18)"; fix build fix-drill-export-20261113 queued behind drill-busy in nightly-export-drill
-[2026-11-13 12:51:23] job-operator diagnose showingtime 2026-11-13
-[2026-11-13 12:51:43] jobs: showingtime: FAILED -> ESCALATED - ShowingTime asked for a 2FA code 3 times today and none arrived; can you log in by hand and check where the codes are going?
+[2026-11-13 13:24:00] job-operator diagnose bf-daily 2026-11-13
+[2026-11-13 13:24:51] jobs: bf-daily: FAILED -> ESCALATED - The Deals Hub export broke (Amazon page change) and the bf-deals-ingest-fix plan (7da72ae) is already written; may its builder probe Deals Hub live and run the daily to create today's draft on Audrey's account: yes or hold?
+[2026-11-13 13:23:29] job-operator diagnose drill-export 2026-11-13
+[2026-11-13 13:23:55] jobs: drill-export: FAILED -> FIXING - cause: The job failed on all 3 attempts on 2026-11-13 (11:00:02Z, 11:30:03Z, 12:00:04Z), each with ok=false, total=null and error "total is NaN (scripts/nightly-export; fix build fix-drill-export-20261113 queued behind drill-busy in nightly-export-drill
+[2026-11-13 13:24:57] job-operator diagnose showingtime 2026-11-13
+[2026-11-13 13:25:17] jobs: showingtime: FAILED -> ESCALATED - ShowingTime 2FA codes aren't arriving (both of today's logins hit the code screen and got nothing): can you check that ST is still sending its codes to the Gmail the server reads, and log in once by hand?
