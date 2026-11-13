@@ -2,12 +2,12 @@
   "job": "cc-optin-am",
   "date": "2026-11-13",
   "state": "OK",
-  "since": 1794578506,
+  "since": 1794578474,
   "last_action": "DONE 2026-11-13T16:25:19Z",
   "last_verdict": "ok",
   "last_detail": "DONE 2026-11-13T16:25:19Z",
-  "checked_at": 1794578506,
+  "checked_at": 1794578474,
   "error_ticks": 0,
-  "last_ok_at": 1794578506,
+  "last_ok_at": 1794578474,
   "last_ok_date": "2026-11-13"
 }

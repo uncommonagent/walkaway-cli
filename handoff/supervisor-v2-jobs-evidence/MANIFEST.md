@@ -23,7 +23,8 @@ relative to handoff/supervisor-v2-jobs-evidence/ unless noted otherwise.
 - Source of truth (spot check): Supabase tables bf_runs, cc_optin_runs, cc_spc_optins, extension_report_state, pulse_showings_daily, st_session_attempts, pulse_newsletter_issues and monday_run_reports, plus /tmp/st-login-agent.log. Every sample row in the dump is a verbatim REST response.
 
 ## AC3: drill on fixtures, exactly one ntfy per transition (drill topic)
-Drill directory: `ac3-drill/`, produced by `tests/drill/run-jobs-drill.sh` on topic jim-walkaway-jobs-drill-addf5fe6, using real `claude -p` and real ntfy. Result: 26/26.
+Drill directory: `ac3-drill/`, produced by `tests/drill/run-jobs-drill.sh` using real `claude -p` and real ntfy. Result: 26/26.
+Phase 6 ran on topic jim-walkaway-jobs-drill-addf5fe6. Phase 7 re-ran it on the Codex-fixed code (topic jim-walkaway-jobs-drill-fbe389ee, 12:51 ET): 26/26, 9 polled == 9 sent; `ac3-drill/` now holds that run.
 
 | Requirement | Evidence |
 |---|---|
@@ -35,7 +36,7 @@ Drill directory: `ac3-drill/`, produced by `tests/drill/run-jobs-drill.sh` on to
 
 Supporting files: `supervisor-job-transitions.log`, `job-operator.log`, `walkaway-status-drill.txt`.
 
-Unit level, fixture-based with no network or model: tests/test-jobs-states.sh 36/36 and tests/test-job-operator.sh 26/26 (`ac5-gates.txt`).
+Unit level, fixture-based with no network or model: tests/test-jobs-states.sh 36/36 and tests/test-job-operator.sh 26/26 (`ac5-gates.txt`); 37/37 after the Phase 7 fixes (`ac5-gates-final.txt`).
 
 ## AC4: live supervisor on the Mini with job watching on; `walkaway status` JOBS table with today's real states
 - `ac4-live/walkaway-status-live.txt` (12:16 ET): the launchd agent is active (interval 120 s, last exit 0), `jobs.enabled` exists, and the JOBS table shows bf-daily, cc-optin-am, spc, extension-reports and showingtime as OK. cc-optin-pm reads "disabled" and realtea-* read "off today".
@@ -56,4 +57,12 @@ Unit level, fixture-based with no network or model: tests/test-jobs-states.sh 36
   | operator | 68/68 |
 
   Total: 167 checks, all passing.
-- Phase 7 (post-Codex) re-run: see `ac5-gates-final.txt`.
+- Phase 7 (after the Codex cycle 1 fixes) re-run: `ac5-gates-final.txt`. shellcheck rc=0; parse 7/7, states 18/18, AC1 12/12, jobs-states 36/36, job-operator 37/37, operator 68/68 = 178 checks, all passing; drill 26/26.
+
+## Codex cycle 1 fixes (Phase 7): each regression fails on 4d5c8e2, passes after
+Regression scenarios J7-J9 in tests/test-job-operator.sh (11 checks).
+- `codex1-regression-fail-on-4d5c8e2.txt`: the new tests/test-job-operator.sh run against a scratch worktree of 4d5c8e2. Result 29/37: all 8 failures are J7-J9.
+  - J7 (P1): both fix builds registered into one repo (`registered: fix-bf-daily-20261113.json fix-spc-20261113.json`).
+  - J8 (P2, rollover): the retry never ran after the day-2 merge.
+  - J9 (P2, queued fix): a second plan was written and `.fix_feature` was overwritten.
+- `codex1-regression-pass-after-fix.txt`: the same tests on the fix, 37/37. J7: one build registered, the other plan alone in the queue, both jobs FIXING (launched / queued behind), the lock released.

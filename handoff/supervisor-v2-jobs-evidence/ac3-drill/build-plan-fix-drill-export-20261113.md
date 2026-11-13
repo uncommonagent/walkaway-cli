@@ -13,7 +13,7 @@ on 2026-11-13 (incident: /Users/jimross/Projects/walkaway-cli/tests/drill/work-j
 `/Users/jimross/Projects/walkaway-cli/tests/drill/work-jobs/nightly-export-drill`
 
 ## Goal
-run() on data/orders.csv returns {ok: true, total: 49.75} instead of throwing 'total is NaN'.
+total() sums the CSV 'amount' column, so run() returns {ok:true, total:49.75} for the current data/orders.csv instead of throwing 'total is NaN'.
 
 ## Non-goals
 - Any other scheduled job, its schedule, or turning a job off.
@@ -21,15 +21,16 @@ run() on data/orders.csv returns {ok: true, total: 49.75} instead of throwing 't
 
 ## Evidence (do not re-derive)
 - Incident: /Users/jimross/Projects/walkaway-cli/tests/drill/work-jobs/home/job-fixes/drill-export-2026-11-13/handoff/job-incident-drill-export-2026-11-13.md (copied into handoff/ in Phase 0).
-- Cause (job operator, read-only diagnosis): All 3 export_runs attempts on 2026-11-13 (11:00:02Z, 11:30:03Z, 12:00:04Z) failed with ok=false, total=null, error "total is NaN (scripts/nightly-export.js:18)". The cause is a misspelled field name. total() in scripts/nightly-export.js:12 reads `r.ammount` (double m). readOrders() at scripts/nightly-export.js:5-9 builds row objects keyed by the CSV header, and the header in data/orders.csv:1 is `id,customer,amount`. So every r.ammount is undefined, parseFloat(undefined) is NaN, and the sum is NaN. run() then throws at scripts/nightly-export.js:17 (the message says line 18, which is off by one). The code came in as a single commit (630d760 "nightly export runner"), so this is a code bug, not a data or transient problem. Retries cannot succeed without a code change, which matches all three attempts failing with the same error. The correct total for the current input is 12.50 + 30.25 + 7.00 = 49.75.
-- export_runs 2026-11-13T12:00:04Z ok=false total=null error='total is NaN (scripts/nightly-export.js:18)'
-- export_runs 2026-11-13T11:30:03Z ok=false total=null error='total is NaN (scripts/nightly-export.js:18)'
-- export_runs 2026-11-13T11:00:02Z ok=false total=null error='total is NaN (scripts/nightly-export.js:18)'
-- scripts/nightly-export.js:12  return rows.reduce((sum, r) => sum + parseFloat(r.ammount), 0)  -- typo 'ammount'
-- data/orders.csv:1  id,customer,amount  -- real column is 'amount'
-- scripts/nightly-export.js:8  readOrders keys rows by header columns, so r.ammount is undefined
-- scripts/nightly-export.js:17  throws 'total is NaN (scripts/nightly-export.js:18)' (line reference in message is off by one)
-- git log: only commit 630d760 'nightly export runner' introduced the runner and the CSV together; no later change
+- Cause (job operator, read-only diagnosis): All 3 export_runs rows for 2026-11-13 (11:00:02Z, 11:30:03Z, 12:00:04Z) have ok=false, total=null and error "total is NaN (scripts/nightly-export.js:18)". The cause is a misspelled field name. total() at scripts/nightly-export.js:12 reads `r.ammount` (two m's), but readOrders (scripts/nightly-export.js:5-9) keys each row by the CSV header in data/orders.csv:1, which is `id,customer,amount`. So r.ammount is undefined for every row, parseFloat(undefined) returns NaN, the sum is NaN, and run() throws at scripts/nightly-export.js:17. The message in that throw says line 18, which is off by one. The bug is deterministic, so retrying cannot fix it: every attempt failed the same way. The code was added in the repo's only commit, 4a10a42 ("nightly export runner"), so there is no recent change to blame or revert. With the correct field, the expected total for the current data is 12.50 + 30.25 + 7.00 = 49.75.
+- export_runs 2026-11-13T12:00:04Z ok=false total=null error="total is NaN (scripts/nightly-export.js:18)"
+- export_runs 2026-11-13T11:30:03Z ok=false total=null error="total is NaN (scripts/nightly-export.js:18)"
+- export_runs 2026-11-13T11:00:02Z ok=false total=null error="total is NaN (scripts/nightly-export.js:18)"
+- state.failed_detail: "not OK by 09:00: 3 failed attempt(s); latest 2026-11-13T12:00:04Z: total is NaN (scripts/nightly-export.js:18)"
+- scripts/nightly-export.js:12 `return rows.reduce((sum, r) => sum + parseFloat(r.ammount), 0)`: misspelled key 'ammount'
+- data/orders.csv:1 header `id,customer,amount`: the real key is 'amount'
+- scripts/nightly-export.js:7-8: readOrders keys each row by the header columns, so r.ammount === undefined and parseFloat(undefined) is NaN
+- scripts/nightly-export.js:17: the NaN guard throws, and its message names line 18 (off by one)
+- git log: only commit 4a10a42 'nightly export runner' (2026-11-13 12:50 -0500) added the file with the typo already in it
 
 ## Decisions (who, when)
 - Jim 2026-11-13: failed scheduled jobs get an auto-fix build from template v2 (supervisor-v2-jobs). Protected actions unchanged.
@@ -43,11 +44,11 @@ run() on data/orders.csv returns {ok: true, total: 49.75} instead of throwing 't
 - The incident rows archived in the incident file.
 
 ## Acceptance criteria
-- [ ] AC1 On the incident fixture (id,customer,amount / 1,acme,12.50 / 2,globex,30.25 / 3,initech,7.00), total() returns 49.75 and run() returns {ok: true, total: 49.75}. (evidence: handoff/drill-export-fix-evidence/fixture-run.txt)
-- [ ] AC2 The regression fixture fails on commit 630d760 (it throws 'total is NaN') and passes after the fix. Both outputs are captured. (evidence: handoff/drill-export-fix-evidence/regression-before-after.txt)
-- [ ] AC3 A CSV without an 'amount' column makes total() throw an error that names the missing 'amount' column. It does not return NaN. (evidence: handoff/drill-export-fix-evidence/missing-column.txt)
-- [ ] AC4 The diff touches only scripts/nightly-export.js and the new test/fixture files. data/orders.csv and the jobs.yaml schedule are unchanged. (evidence: handoff/drill-export-fix-evidence/diff-scope.txt)
-- [ ] ACR Regression fixture from this incident: tests/fixtures/orders-2026-11-13.csv, a byte copy of data/orders.csv as used in the failed runs at 2026-11-13T11:00:02Z, 11:30:03Z and 12:00:04Z: 'id,customer,amount\n1,acme,12.50\n2,globex,30.25\n3,initech,7.00'. Assert total(readOrders(fixture)) === 49.75 and that run() does not throw. On the current code, total() returns NaN and run() throws 'total is NaN (scripts/nightly-export.js:18)', so the fixture fails.. Fails on the pre-fix commit, passes now (evidence: handoff/fix-drill-export-20261113-evidence/regression.txt).
+- [ ] AC1 The regression fixture (this incident's orders.csv rows) gives total() === 49.75 and run()-equivalent {ok:true, total:49.75}. On the pre-fix code the same test fails with NaN / 'total is NaN'. (evidence: handoff/drill-export-fix-evidence/regression-test-output.txt)
+- [ ] AC2 The test output was captured before and after the fix: it fails on commit 4a10a42 and passes on the fix commit. (evidence: handoff/drill-export-fix-evidence/before-after.txt)
+- [ ] AC3 A fixture whose amount column is missing or misnamed still fails loudly (throws). It does not silently return 0. (evidence: handoff/drill-export-fix-evidence/missing-column-test-output.txt)
+- [ ] AC4 The diff touches only scripts/nightly-export.js and the new test/fixture files. data/orders.csv, jobs.yaml and the schedule are unchanged. (evidence: handoff/drill-export-fix-evidence/diff-stat.txt)
+- [ ] ACR Regression fixture from this incident: CSV copied verbatim from data/orders.csv at the time of the incident: "id,customer,amount\n1,acme,12.50\n2,globex,30.25\n3,initech,7.00\n". Expect total(readOrders(fixture)) === 49.75. Current code returns NaN, and run() throws 'total is NaN (scripts/nightly-export.js:18)', matching export_runs rows 2026-11-13T11:00:02Z / 11:30:03Z / 12:00:04Z.. Fails on the pre-fix commit, passes now (evidence: handoff/fix-drill-export-20261113-evidence/regression.txt).
 - [ ] ACG Gates: the repo typecheck, lint, full test suite vs baseline, build; CI green; Codex closed (evidence: handoff/fix-drill-export-20261113-evidence/MANIFEST.md).
 
 ## Gate checklist (the operator executes this before merge)
@@ -59,23 +60,19 @@ run() on data/orders.csv returns {ok: true, total: 49.75} instead of throwing 't
 - Spend, credentials/logins/2FA, live writes to Audrey's account or any publish/send, data deletion, schedule changes, anything marked "Jim decides".
 
 ## Expected files touched
-Expected: 7 files plus the handoff copies (plan, incident, evidence, reports). Hard ceiling: 11.
+Expected: 3 files plus the handoff copies (plan, incident, evidence, reports). Hard ceiling: 7.
 - scripts/nightly-export.js
-- tests/nightly-export.test.js
-- tests/fixtures/orders-2026-11-13.csv
-- handoff/drill-export-fix-evidence/fixture-run.txt
-- handoff/drill-export-fix-evidence/regression-before-after.txt
-- handoff/drill-export-fix-evidence/missing-column.txt
-- handoff/drill-export-fix-evidence/diff-scope.txt
+- scripts/nightly-export.test.js
+- scripts/fixtures/orders-2026-11-13.csv
 
 ## Phases
 ### Phase 0: Prepare
 - Copy /Users/jimross/Projects/walkaway-cli/tests/drill/work-jobs/home/job-fixes/drill-export-2026-11-13/handoff/job-incident-drill-export-2026-11-13.md, /Users/jimross/Projects/walkaway-cli/tests/drill/work-jobs/home/job-fixes/drill-export-2026-11-13/handoff/evidence-drill-export-2026-11-13.json and this plan into handoff/ and commit them on the branch. Confirm the cause against the code.
 ### Phase 1: Fix
 - scripts/nightly-export.js total(): read r.amount instead of r.ammount.
-- scripts/nightly-export.js total(): if a row has no 'amount' field (column missing from the header), throw a clear error naming the missing column, rather than producing NaN silently.
-- scripts/nightly-export.js run(): correct the line reference in the NaN error message, or remove it.
-- Add a fixture test (e.g. tests/nightly-export.test.js, runnable with plain node and assert) that calls readOrders/total/run on a fixture copy of this incident's data/orders.csv.
+- scripts/nightly-export.js run(): fix the error message line reference so it points at the throw's real location (or drop the hard-coded line number).
+- Make the NaN failure easier to diagnose: if a row's amount does not parse, include the row id or the missing column name in the error, without changing the success output.
+- Add a regression test (e.g. scripts/nightly-export.test.js, run with node:test or plain node assert) using the fixture below.
 ### Phase 5: Tests
 - The regression fixture above (must fail on the pre-fix commit) + the full suite.
 ### Phase 6: Smoke (read-only)
@@ -84,14 +81,14 @@ Expected: 7 files plus the handoff copies (plan, incident, evidence, reports). H
 
 ## Do NOT build
 - No changes to any other job, to schedules, or to job data rows.
-- Do not rename the CSV column or edit data/orders.csv.
-- Do not change the job schedule, retry window or jobs.yaml entry.
-- Do not write rows to export_runs or trigger the job or its retry command.
-- No CSV-parsing library or broader refactor of readOrders.
-- No dashboards and no changes to other jobs.
+- Do not rename the CSV column in data/orders.csv to match the typo.
+- Do not treat NaN as 0 or skip bad rows silently.
+- Do not change jobs.yaml, the schedule, the retry command or the check predicate.
+- Do not run the job or its retry command, and do not write export_runs rows.
+- Do not add dashboards or touch other jobs.
 
 ## Stop rules (build-specific, in addition to WALKAWAY_BUILD_PROTOCOL.md)
 - Never write to job data tables or trigger the job's live action during the build.
-- Stop and escalate if the fixture total does not equal 49.75 after the one-field fix.
-- Stop if the fix appears to need changes outside scripts/nightly-export.js and new test files.
-- Stop if verification would need a live run of the job or writes to export_runs.
+- Stop and escalate if the fix seems to need changing data/orders.csv or the export_runs schema.
+- Stop if the regression test passes on the unmodified code (the fixture does not reproduce the bug).
+- Stop if verification would need the live job run or a write to export_runs.

@@ -148,15 +148,24 @@ _render_plan() {
 }
 
 # _queue_or_launch <repo-root> <plan> <feature> -> one line describing what happened
-_queue_or_launch() {
+# Runs in a subshell holding the repo's queue lock (lib/registry.sh) from the queue append through the launch's
+# registration, so two job operators (or a post-merge _launch_next) never both launch into one free repo or
+# interleave queue rewrites. The EXIT trap releases the lock on every path.
+_queue_or_launch() (
   local root="$1" plan="$2" feature="$3" key qfile active log t0
   key=$(registry_repo_key "$root"); qfile="$(queue_dir)/${key}.txt"
   mkdir -p "$(queue_dir)"
+  if ! queue_lock "$key"; then
+    echo "LAUNCH-FAILED fix build $feature: queue lock for $key busy > ${WALKAWAY_QUEUE_LOCK_WAIT:-120}s"
+    exit 0
+  fi
+  _QLOCK_KEY=$key   # not local: locals are gone when the EXIT trap runs (this subshell's copy only)
+  trap 'queue_unlock "$_QLOCK_KEY"' EXIT
   grep -qxF "$plan" "$qfile" 2>/dev/null || echo "$plan" >> "$qfile"
   active=$(_other_active_build "$root" .repo_root)
   if [[ -n "$active" ]]; then
     echo "fix build $feature queued behind $active in $key"
-    return 0
+    exit 0
   fi
   local tmp="${qfile}.tmp.$$"
   awk -v n="$plan" '$0 != n' "$qfile" > "$tmp" && mv "$tmp" "$qfile"
@@ -173,7 +182,7 @@ _queue_or_launch() {
   else
     echo "LAUNCH-FAILED fix build $feature did not register (see $log)"
   fi
-}
+)
 
 # ── modes ────────────────────────────────────────────────────────────────────
 
@@ -192,9 +201,14 @@ jo_diagnose() {
   echo "$ev" | jq . > "$ws/evidence-${job_name}-${d}.json"
 
   # One auto-fix build per job per day, and never a second one while an earlier fix is still in flight.
-  local prev prev_state
-  prev=$(jstate_get "$job_name" .fix_feature); prev_state=""
+  # In flight = registered and not MERGED, or not registered yet but its plan is still in the owner repo's queue.
+  local prev prev_state prev_plan
+  prev=$(jstate_get "$job_name" .fix_feature); prev_state=""; prev_plan=$(jstate_get "$job_name" .fix_plan)
   [[ -n "$prev" ]] && prev_state=$(registry_get "$prev" .state)
+  if [[ -n "$prev" && -z "$prev_state" && -n "$prev_plan" ]] &&
+     grep -qxF "$prev_plan" "$(queue_dir)/$(registry_repo_key "$repo").txt" 2>/dev/null; then
+    prev_state="queued"
+  fi
   if [[ "$(jstate_get "$job_name" .fix_date)" == "$d" ]]; then
     forced="a fix build for $job_name already ran today ($prev)"
   elif [[ -n "$prev" && -n "$prev_state" && "$prev_state" != "MERGED" ]]; then
@@ -271,6 +285,11 @@ jo_progress() {
   fi
   [[ "$(jstate_get "$job_name" .retry_ran)" == "true" ]] && return 0
   jstate_update "$job_name" '.retry_ran = true'
+  # Seen merged only after the job already recovered (e.g. on a later day): the retry has nothing left to prove.
+  if [[ "$(jstate_get "$job_name" .state)" == "OK" ]]; then
+    jstate_update "$job_name" '.last_action = $a' --arg a "fix $feature merged; job already OK - no retry needed"
+    return 0
+  fi
   cmd=$(jq -r '.retry.command // ""' <<< "$job")
   if [[ -z "$cmd" || "$(jq -r .protected <<< "$job")" == "true" ]]; then
     jstate_update "$job_name" '.last_action = $a' --arg a "fix $feature merged; no safe retry path - confirming on the job's next run"
@@ -278,7 +297,7 @@ jo_progress() {
   fi
   # The job's own documented retry path, once, bounded.
   local out rc=0 pid waited=0
-  out="${WALKAWAY_HOME}/logs/job-retry-${job_name}.log"
+  out="${WALKAWAY_HOME}/logs/job-retry-${job_name}.log"; mkdir -p "${WALKAWAY_HOME}/logs"
   echo "[$(date '+%Y-%m-%d %H:%M:%S')] retry after $feature merged: $cmd" >> "$out"
   bash -c "$cmd" >> "$out" 2>&1 &
   pid=$!

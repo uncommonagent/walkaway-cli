@@ -16,6 +16,35 @@ queue_dir() { echo "${WALKAWAY_HOME}/queue"; }
 # Queue key for a repo: basename of the main repo root (worktrees share their source repo's queue).
 registry_repo_key() { basename "$1"; }
 
+# Per-repo launch lock: one process at a time reads/rewrites <repo>'s queue, checks for an active build and launches.
+# mkdir lock at $WALKAWAY_HOME/state/queue-<key>.lock holding the owner's pid. Waits up to WALKAWAY_QUEUE_LOCK_WAIT
+# seconds (120); a lock whose pid is dead (or that never got a pid within 10 s) is stale and is taken over.
+# Callers run in a subshell and release with `trap 'queue_unlock <key>' EXIT` so every exit path unlocks.
+_queue_lock_dir() { echo "${WALKAWAY_HOME}/state/queue-$1.lock"; }
+queue_lock() {
+  local lock pid waited=0 me="${BASHPID:-$$}"
+  lock=$(_queue_lock_dir "$1"); mkdir -p "${WALKAWAY_HOME}/state"
+  while ! mkdir "$lock" 2>/dev/null; do
+    pid=$(cat "$lock/pid" 2>/dev/null || true)
+    if { [[ -n "$pid" ]] && ! kill -0 "$pid" 2>/dev/null; } ||
+       { [[ -z "$pid" ]] && (( $(date +%s) - $(stat -f %m "$lock" 2>/dev/null || date +%s) > 10 )); }; then
+      # Stale: move it aside atomically (only one waiter wins the rename), then retry mkdir.
+      mv "$lock" "${lock}.stale.${me}" 2>/dev/null && rm -rf "${lock}.stale.${me}"
+      continue
+    fi
+    (( waited >= ${WALKAWAY_QUEUE_LOCK_WAIT:-120} )) && return 1
+    sleep 1; waited=$((waited + 1))
+  done
+  echo "$me" > "$lock/pid"
+}
+# Releases the lock only if this process holds it.
+queue_unlock() {
+  local lock
+  lock=$(_queue_lock_dir "$1")
+  [[ "$(cat "$lock/pid" 2>/dev/null)" == "${BASHPID:-$$}" ]] && rm -rf "$lock"
+  return 0
+}
+
 # Start time of a PID as printed by ps (empty if the PID is gone).
 pid_started() {
   [[ -n "${1:-}" && "$1" != "null" ]] || return 0

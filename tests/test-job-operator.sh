@@ -34,7 +34,7 @@ diagnose() { WALKAWAY_JOBS_NOW=$(at "$2 12:01") bash "$ROOT/lib/job-operator.sh"
 
 cleanup() {
   local f p
-  for f in "$WALKAWAY_HOME"/registry/*.json; do
+  for f in "$W"/home*/registry/*.json; do
     [[ -f "$f" ]] || continue
     for p in $(jq -r '.builder_pid, .watcher_pid | select(. != null)' "$f"); do pkill -P "$p" 2>/dev/null; kill "$p" 2>/dev/null; done
   done
@@ -47,6 +47,7 @@ cat > "$W/stub-claude" <<EOF
 #!/usr/bin/env bash
 job=\$(printf '%s\n' "\$2" | sed -n 's/^Job: \([a-z0-9-]*\) (.*/\1/p' | head -1)
 echo "\$(date +%T) stub-claude \$job cwd=\$(pwd)" >> "$W/stub-claude.log"
+sleep "\${STUB_CLAUDE_DELAY:-0}"
 jq -c '{structured_output: .}' "$W/decisions/\$job.json"
 EOF
 chmod +x "$W/stub-claude"
@@ -150,6 +151,75 @@ done
 check "bf-daily: FIXING once, ESCALATED once" [ "$(ntfy bf-daily FIXING)/$(ntfy bf-daily ESCALATED)" == "1/1" ]
 check "showingtime: FIXING once, OK once" [ "$(ntfy showingtime FIXING)/$(ntfy showingtime OK)" == "1/1" ]
 check "cc-optin-am / spc / realtea-generate: ESCALATED once each" [ "$(ntfy cc-optin-am ESCALATED)$(ntfy spc ESCALATED)$(ntfy realtea-generate ESCALATED)" == "111" ]
+
+# Codex cycle 1 regressions (each fails on 4d5c8e2). Each scenario gets its own home and job config.
+home() { export WALKAWAY_HOME="$W/home-$1"; mkdir -p "$WALKAWAY_HOME/queue" "$WALKAWAY_HOME/logs"; touch "$WALKAWAY_HOME/supervisor.enabled"; }
+
+echo "J7 (P1) two jobs of one free repo fail together -> exactly one fix build launched, the other queued behind it"
+home race
+R3=$(drill_make_repo "$W/repos" race-scratch)
+drill_set_modes "$R3" fix-bf-daily-20261113 work
+drill_set_modes "$R3" fix-spc-20261113 work
+jq --arg r "$R3" '.jobs |= map(if .name == "bf-daily" or .name == "spc" then .owner_repo = $r else . end)' "$W/jobs.yaml" > "$W/jobs-race.yaml"
+echo "$FIX_DECISION" > "$W/decisions/bf-daily.json"
+echo "${FIX_DECISION//bf-daily/spc}" > "$W/decisions/spc.json"
+fail_job bf-daily 2026-11-13; fail_job spc 2026-11-13
+WALKAWAY_JOBS_FILE="$W/jobs-race.yaml" STUB_CLAUDE_DELAY=2 diagnose bf-daily 2026-11-13 &
+p1=$!
+WALKAWAY_JOBS_FILE="$W/jobs-race.yaml" STUB_CLAUDE_DELAY=2 diagnose spc 2026-11-13 &
+p2=$!
+wait "$p1" "$p2"
+QR="$WALKAWAY_HOME/queue/race-scratch.txt"
+echo "  registered: $(cd "$WALKAWAY_HOME/registry" && echo fix-*.json); queue lines: $(wc -l < "$QR" 2>/dev/null | tr -d ' ')"
+reg_race() { local f n=0; for f in "$WALKAWAY_HOME"/registry/fix-*-20261113.json; do [[ -f "$f" ]] && n=$((n + 1)); done; echo "$n"; }
+check "exactly one fix build registered" [ "$(reg_race)" -eq 1 ]
+check "the other plan is still in the queue file, once; no other lines" bash -c "
+  launched=\$(ls '$WALKAWAY_HOME/registry/' | sed -n 's/^fix-\\(.*\\)-20261113\\.json\$/\\1/p')
+  other=bf-daily; [[ \$launched == bf-daily ]] && other=spc
+  [[ \$(cat '$QR') == '$WALKAWAY_HOME/job-fixes/'\$other'-2026-11-13/handoff/build-plan-fix-'\$other'-20261113.md' ]]"
+check "both jobs FIXING: one launched, one queued behind it" bash -c "
+  a=\$(jq -r .last_action '$WALKAWAY_HOME/jobs/state/bf-daily.json'); b=\$(jq -r .last_action '$WALKAWAY_HOME/jobs/state/spc.json')
+  [[ \$(jq -r .state '$WALKAWAY_HOME/jobs/state/bf-daily.json')\$(jq -r .state '$WALKAWAY_HOME/jobs/state/spc.json') == FIXINGFIXING ]] &&
+  [[ (\$a == *launched* && \$b == *'queued behind fix-bf-daily-20261113'*) || (\$b == *launched* && \$a == *'queued behind fix-spc-20261113'*) ]]"
+check "queue lock released" [ ! -e "$WALKAWAY_HOME/state/queue-race-scratch.lock" ]
+
+echo "J8 (P2) FIXING on day 1, rollover, fix MERGED on day 2 -> retry once -> resolved (failed day 1)"
+home rollover
+jq --arg retry "echo retried >> '$W/retry-rollover.log'" '.jobs |= map(.enabled = (.name == "showingtime")
+   | if .name == "showingtime" then .retry.command = $retry else . end)' "$W/jobs.yaml" > "$W/jobs-rollover.yaml"
+bash -c "source '$ROOT/lib/registry.sh'; registry_register fix-showingtime-20261113 '$R2' '$R2' '$R2/handoff/x.md' feature/fix-showingtime-20261113 '' '' '' false"
+bash -c "source '$ROOT/lib/jobs.sh'; jstate_update showingtime '.date = \"2026-11-13\" | .state = \"FIXING\" | .since = 0 | .fix_feature = \"fix-showingtime-20261113\" | .fix_plan = \"$R2/handoff/x.md\" | .fix_date = \"2026-11-13\" | .retry_ran = false'"
+rest showingtime show '[]'; rest showingtime attempts '[]'
+jtick() { WALKAWAY_JOBS_FILE="$W/jobs-rollover.yaml" WALKAWAY_JOBS_NOW=$(at "$1") bash "$ROOT/lib/jobs.sh" tick >> "$W/jop.log" 2>&1; }
+jtick "2026-11-14 00:05"
+check "day 2 rolled over, day 1 carried unresolved, fix still tracked" [ "$(st showingtime date)/$(st showingtime unresolved_from)/$(st showingtime fix_feature)" == "2026-11-14/2026-11-13/fix-showingtime-20261113" ]
+bash -c "source '$ROOT/lib/registry.sh'; registry_update fix-showingtime-20261113 '.state = \"MERGED\"'"
+jtick "2026-11-14 06:10"
+jtick "2026-11-14 06:12"
+check "retry path ran exactly once on day 2" [ "$(wc -l < "$W/retry-rollover.log" 2>/dev/null | tr -d ' ')" == "1" ]
+rest showingtime show '[{"obs_date":"2026-11-13","showings":2401,"source":"showingtime","first_seen_at":"2026-11-14T11:15:00Z"}]'
+jtick "2026-11-14 06:14"
+jtick "2026-11-14 06:16"
+check "OK, one resolved (failed 2026-11-13) ntfy, still one retry" bash -c "[[ \$(jq -r .state '$WALKAWAY_HOME/jobs/state/showingtime.json') == OK ]] && [[ \$(grep -c 'job showingtime: OK - resolved (failed 2026-11-13): 2026-11-13 total showings=2401' '$WALKAWAY_HOME/logs/ntfy.log') -eq 1 ]] && [[ \$(wc -l < '$W/retry-rollover.log' | tr -d ' ') == 1 ]]"
+
+echo "J9 (P2) day-1 fix still queued behind a busy build, the job FAILS on day 2 -> no second plan, nothing changed"
+home queued
+sleep 600 > /dev/null 2>&1 &
+bash -c "source '$ROOT/lib/registry.sh'; registry_register busy-build-2 '$R2' '$R2' '$R2/handoff/x.md' feature/busy '$!' '' '' false"
+echo "${FIX_DECISION//bf-daily/showingtime}" > "$W/decisions/showingtime.json"
+rest showingtime show '[]'
+rest showingtime attempts '[{"outcome":"login_failed","trigger":"alarm","started_at":"2026-11-13T11:45:00Z","rows":0,"dates_failed":8}]'
+fail_job showingtime 2026-11-13
+diagnose showingtime 2026-11-13
+QQ="$WALKAWAY_HOME/queue/throughline-scratch.txt"
+cp "$QQ" "$W/queue-day1.txt" 2>/dev/null
+check "day 1: fix queued behind busy-build-2" bash -c "grep -q 'build-plan-fix-showingtime-20261113.md' '$QQ' && [[ ! -f '$WALKAWAY_HOME/registry/fix-showingtime-20261113.json' ]]"
+n_claude=$(grep -c 'stub-claude showingtime' "$W/stub-claude.log")
+fail_job showingtime 2026-11-14
+diagnose showingtime 2026-11-14
+check "no second plan written" [ ! -e "$WALKAWAY_HOME/job-fixes/showingtime-2026-11-14/handoff/build-plan-fix-showingtime-20261114.md" ]
+check ".fix_feature unchanged, queue unchanged" bash -c "[[ \$(jq -r .fix_feature '$WALKAWAY_HOME/jobs/state/showingtime.json') == fix-showingtime-20261113 ]] && cmp -s '$QQ' '$W/queue-day1.txt'"
+check "FIXING: failed again, earlier fix still queued (claude not asked)" bash -c "[[ \$(jq -r .state '$WALKAWAY_HOME/jobs/state/showingtime.json') == FIXING ]] && [[ \$(jq -r .last_action '$WALKAWAY_HOME/jobs/state/showingtime.json') == 'failed again; earlier fix build fix-showingtime-20261113 still queued' ]] && [[ \$(grep -c 'stub-claude showingtime' '$W/stub-claude.log') == $n_claude ]]"
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

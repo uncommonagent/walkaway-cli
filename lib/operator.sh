@@ -475,21 +475,29 @@ _sync_default() {
 }
 
 # Launch the repo's next queued plan (one builder per repo). Echoes the launched feature, if any.
-_launch_next() {
+# Runs in a subshell holding the repo's queue lock (lib/registry.sh) across the queue read/rewrite and the launch,
+# so it never interleaves with a job operator's fix launch (lib/job-operator.sh _queue_or_launch).
+_launch_next() (
   local root key qfile next active
   root=$(_reg .repo_root); key=$(registry_repo_key "$root")
   qfile="$(queue_dir)/${key}.txt"
-  [[ -f "$qfile" ]] || return 0
+  [[ -f "$qfile" ]] || exit 0
+  if ! queue_lock "$key"; then
+    echo "next launch skipped: queue lock for $key busy > ${WALKAWAY_QUEUE_LOCK_WAIT:-120}s"
+    exit 0
+  fi
+  _QLOCK_KEY=$key   # not local: locals are gone when the EXIT trap runs (this subshell's copy only)
+  trap 'queue_unlock "$_QLOCK_KEY"' EXIT
   next=$(grep -v '^[[:space:]]*\(#\|$\)' "$qfile" | head -1 || true)
-  [[ -n "$next" ]] || return 0
+  [[ -n "$next" ]] || exit 0
   active=$(_other_active_build "$root" .repo_root)
   if [[ -n "$active" ]]; then
     echo "queued $(basename "$next") held: $active still active in $key"
-    return 0
+    exit 0
   fi
   if [[ ! -f "$next" ]]; then
     echo "queued plan missing: $next"
-    return 0
+    exit 0
   fi
   # Remove it from the queue first so a failing launch never relaunches in a loop.
   local tmp="${qfile}.tmp.$$"
@@ -508,7 +516,7 @@ _launch_next() {
   else
     echo "next plan $(basename "$next") failed to launch (see $log)"
   fi
-}
+)
 
 # The MERGED outcome goes to the operator log under $WALKAWAY_HOME, the registry and ntfy only: the build's
 # checkout is gone or back on the default branch (or the next feature's), so nothing is written into a repo.

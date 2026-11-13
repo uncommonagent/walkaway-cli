@@ -269,11 +269,15 @@ _jobs_rollover() {
   [[ -z "$prev" || "$prev" == "$today" ]] && return 0
   local carry=""
   case "$pstate" in FAILED|FIXING|ESCALATED) carry=$(jstate_get "$job" .unresolved_from); carry=${carry:-$prev} ;; esac
+  # A fix not yet followed through (retry not run) stays tracked: jobs_evaluate keeps calling its progress.
+  local fix=""
+  [[ "$(jstate_get "$job" .retry_ran)" != "true" ]] && fix=$(jstate_get "$job" .fix_feature)
   jstate_update "$job" '.date = $d | .state = "PENDING" | .since = ($now|tonumber) | .error_ticks = 0
-      | .last_action = ("new day" + (if $c != "" then "; " + $c + " unresolved" else "" end))
+      | .last_action = ("new day" + (if $c != "" then "; " + $c + " unresolved" else "" end)
+                       + (if $f != "" then "; fix " + $f + " still in flight" else "" end))
       | (if $c != "" then .unresolved_from = $c else . end)
       | del(.retrying_since, .operator_pid, .operator_spawned, .incident)' \
-    --arg d "$today" --arg c "$carry" --arg now "$(_jobs_now)"
+    --arg d "$today" --arg c "$carry" --arg f "$fix" --arg now "$(_jobs_now)"
 }
 
 # Spawn the job operator (diagnose -> fix plan or escalate) detached; it records its own transition.
@@ -290,7 +294,9 @@ _jobs_spawn_operator() {
 
 _jobs_operator_alive() { local p; p=$(jstate_get "$1" .operator_pid); [[ -n "$p" ]] && kill -0 "$p" 2>/dev/null; }
 
-# jobs_fix_progress <job>: hook for FIXING jobs (fix build tracking, post-merge retry). job-operator.sh owns it.
+# jobs_fix_progress <job>: hook for a job with a fix build not yet followed through (fix build tracking, post-merge
+# retry), on any day and in any state, so a fix that merges after the daily rollover still gets its retry.
+# job-operator.sh owns it.
 _jobs_fix_progress() {
   local op="${WALKAWAY_JOB_OPERATOR:-${JOBS_DIR}/job-operator.sh}"
   [[ -f "$op" ]] && bash "$op" progress "$1" "$2"
@@ -305,12 +311,16 @@ jobs_evaluate() {
   [[ -f "$(_jstate_file "$name")" ]] || jstate_update "$name" '.date = $d | .state = "PENDING" | .since = ($n|tonumber) | .last_action = "first check"' --arg d "$today" --arg n "$now"
   [[ "$kind" == "daily" ]] && _jobs_rollover "$name" "$today"
   [[ "$kind" == "rolling" ]] && jstate_update "$name" '.date = $d' --arg d "$today"
+  _jobs_operator_alive "$name" && { jstate_update "$name" '.last_action = "job operator running"'; return 0; }
+  if [[ "$(jstate_get "$name" .state)" == "FIXING" ]] ||
+     [[ -n "$(jstate_get "$name" .fix_feature)" && "$(jstate_get "$name" .retry_ran)" != "true" ]]; then
+    _jobs_fix_progress "$name" "$today"
+  fi
   if ! jobs_runs_on "$job" "$today"; then
     jstate_update "$name" '.last_action = $a' --arg a "not scheduled today ($(jq -r '(.days // []) | join(",")' <<< "$job"))"
     return 0
   fi
   state=$(jstate_get "$name" .state)
-  _jobs_operator_alive "$name" && { jstate_update "$name" '.last_action = "job operator running"'; return 0; }
   # Daily job already OK today: nothing to re-check.
   [[ "$kind" == "daily" && "$state" == "OK" ]] && return 0
 
@@ -342,7 +352,7 @@ jobs_evaluate() {
   fi
 
   case "$state" in
-    FIXING)    _jobs_fix_progress "$name" "$today"; return 0 ;;
+    FIXING)    return 0 ;;   # fix progress already ran above
     FAILED)
       # The job operator finished but recorded no FIXING/ESCALATED: never leave a failure silent.
       if [[ "$(jstate_get "$name" .operator_spawned)" == "true" ]]; then
