@@ -6,7 +6,8 @@
 #   supervisor.sh adopt                backfill the registry from live walkaway launch logs (see adopt.sh)
 #
 # States: RUNNING, STALLED, STOPPED, DIED, DONE, MERGED, ESCALATED. Every state change sends exactly one
-# ntfy line "<feature>: <STATE> - <action taken>". Judgment calls (failure triage, merge gate) run as a
+# ntfy line "<feature>: <STATE> - <action taken>". While $WALKAWAY_HOME/jobs.enabled exists, each tick also
+# watches the scheduled jobs in jobs.yaml (lib/jobs.sh tick; job lines read "job <name>: <STATE> - ..."). Judgment calls (failure triage, merge gate) run as a
 # detached operator job (operator.sh) so one slow gate never blocks the 2-minute tick for other builds.
 
 set -uo pipefail
@@ -287,13 +288,18 @@ supervisor_heartbeat() {
   [[ "$slot" == "$last" ]] && return 0
   echo "$slot" > "$last_file"
 
-  local lines="" feature st act any=0
+  local lines="" feature st act any=0 jl
   while IFS= read -r feature; do
     [[ -n "$feature" ]] || continue
     st=$(registry_get "$feature" .state); act=$(registry_get "$feature" .last_action)
     case "$st" in MERGED) continue ;; RUNNING|ESCALATED) any=1 ;; esac
     lines+="$feature: $st - $act"$'\n'
   done < <(registry_list)
+  # Scheduled jobs: any non-OK job (window opened) is listed and alone justifies the heartbeat.
+  if [[ -f "${WALKAWAY_HOME}/jobs.enabled" ]]; then
+    jl=$(bash "${SUP_DIR}/jobs.sh" heartbeat 2>/dev/null)
+    [[ -n "$jl" ]] && { lines+="$jl"$'\n'; any=1; }
+  fi
   (( any )) || return 0
   notify_line "${lines%$'\n'}"
 }
@@ -325,6 +331,10 @@ supervisor_tick() {
     [[ -n "$feature" ]] || continue
     supervisor_handle "$feature" || _log "$feature: handler error"
   done < <(registry_list)
+  # Scheduled-job watching (jobs.yaml) runs while $WALKAWAY_HOME/jobs.enabled exists.
+  if [[ -f "${WALKAWAY_HOME}/jobs.enabled" ]]; then
+    bash "${SUP_DIR}/jobs.sh" tick || _log "jobs tick error"
+  fi
   supervisor_heartbeat
   date +%s > "${SUP_STATE_DIR}/supervisor-last-tick"
 }

@@ -5,13 +5,17 @@
 #   jobs.sh check <job> [--date D]       run the job's read-only check for day D (ET, default today) -> JSON
 #   jobs.sh dump [--out F] [job=D ...]   every enabled-or-named job's check with the queries, row counts and
 #                                        sample rows it saw (AC2 evidence); job=D evaluates that job on day D
+#   jobs.sh tick                         evaluate every enabled job, apply day-state transitions (supervisor)
+#   jobs.sh status                       JOBS table (walkaway status)
+#   jobs.sh heartbeat                    heartbeat lines for non-OK jobs whose window has opened
 #
 # Checks are READ-ONLY by construction: REST GETs only (no -X, no body, rpc/ refused) and log greps. The
 # service-role key is read from the source's env file at call time and handed to curl on stdin (-K -), so it
 # never appears in argv, logs or output.
 #
 # Test seams: WALKAWAY_JOBS_FILE (jobs.yaml), WALKAWAY_JOBS_REST_FIXTURES=<dir> (query <name> of job <job> is
-# answered by <dir>/<job>/<name>.json instead of the network), WALKAWAY_JOBS_NOW (epoch "now").
+# answered by <dir>/<job>/<name>.json instead of the network), WALKAWAY_JOBS_NOW (epoch "now"),
+# WALKAWAY_JOB_OPERATOR (job operator script).
 
 set -uo pipefail
 
@@ -200,6 +204,229 @@ jobs_list() {
     column -t -s $'\t'
 }
 
+# ── day state machine ────────────────────────────────────────────────────────
+#
+# One state file per job: $WALKAWAY_HOME/jobs/state/<job>.json. Daily jobs get a fresh day at local midnight;
+# a day that ended FAILED/FIXING/ESCALATED is carried as unresolved_from so its eventual OK still reports.
+#   PENDING    nothing to judge yet (before the window, not run yet, in progress)          silent
+#   RETRYING   failed inside the job's own retry window - the job retries by itself         silent
+#   OK         the job succeeded today                                                      ntfy only if it resolves FAILED/FIXING/ESCALATED
+#   FAILED     not OK and the retry window has passed (rolling: RETRYING > retry_window)    ntfy + job operator
+#   FIXING     the operator queued/launched a fix build                                     ntfy
+#   ESCALATED  one question for Jim (protected or unclear cause)                            ntfy high
+# FAILED/FIXING/ESCALATED never fall back to PENDING/RETRYING within a day: only OK (or a new day) clears them.
+
+WALKAWAY_JOB_ERROR_TICKS="${WALKAWAY_JOB_ERROR_TICKS:-15}"   # consecutive check errors (2-min ticks) before escalating
+
+_jstate_dir() { echo "${WALKAWAY_HOME}/jobs/state"; }
+_jstate_file() { echo "$(_jstate_dir)/$1.json"; }
+jstate_get() { local f; f=$(_jstate_file "$1"); [[ -f "$f" ]] && jq -r "$2 // empty" "$f"; }
+
+# jstate_update <job> <jq-filter> [jq args...]  (atomic; creates {job} if missing)
+jstate_update() {
+  local job="$1" filter="$2" f tmp
+  shift 2
+  f=$(_jstate_file "$job"); mkdir -p "$(_jstate_dir)"
+  [[ -f "$f" ]] || jq -n --arg j "$job" '{job: $j}' > "$f"
+  tmp="${f}.tmp.$$"
+  jq "$@" "$filter" "$f" > "$tmp" && mv "$tmp" "$f"
+}
+
+_jnotify() { # line [priority]
+  # shellcheck source=lib/notify.sh
+  source "${JOBS_DIR}/notify.sh"
+  notify_line "$1" "${2:-default}"
+}
+
+_jlog() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] jobs: $*"; }
+
+# jobs_transition <job> <state> <action>: record; ntfy per the table above (ESCALATED = priority high).
+jobs_transition() {
+  local job="$1" new="$2" action="$3" old unresolved
+  old=$(jstate_get "$job" .state); unresolved=$(jstate_get "$job" .unresolved_from)
+  if [[ "$old" == "$new" ]]; then
+    jstate_update "$job" '.last_action = $a' --arg a "$action"
+    return 0
+  fi
+  jstate_update "$job" '.state = $s | .since = ($now|tonumber) | .last_action = $a' \
+    --arg s "$new" --arg now "$(_jobs_now)" --arg a "$action"
+  _jlog "$job: ${old:-none} -> $new - $action"
+  case "$new" in
+    FAILED|FIXING) _jnotify "job $job: $new - $action" ;;
+    ESCALATED) _jnotify "job $job: ESCALATED - $action" high ;;
+    OK)
+      if [[ "$old" == FAILED || "$old" == FIXING || "$old" == ESCALATED || -n "$unresolved" ]]; then
+        _jnotify "job $job: OK - resolved${unresolved:+ (failed $unresolved)}: $action"
+        jstate_update "$job" 'del(.unresolved_from)'
+      fi ;;
+  esac
+}
+
+# New local day for a daily job: carry an unresolved failure, keep fix tracking, reset the day.
+_jobs_rollover() {
+  local job="$1" today="$2" prev pstate
+  prev=$(jstate_get "$job" .date); pstate=$(jstate_get "$job" .state)
+  [[ -z "$prev" || "$prev" == "$today" ]] && return 0
+  local carry=""
+  case "$pstate" in FAILED|FIXING|ESCALATED) carry=$(jstate_get "$job" .unresolved_from); carry=${carry:-$prev} ;; esac
+  jstate_update "$job" '.date = $d | .state = "PENDING" | .since = ($now|tonumber) | .error_ticks = 0
+      | .last_action = ("new day" + (if $c != "" then "; " + $c + " unresolved" else "" end))
+      | (if $c != "" then .unresolved_from = $c else . end)
+      | del(.retrying_since, .operator_pid, .incident)' \
+    --arg d "$today" --arg c "$carry" --arg now "$(_jobs_now)"
+}
+
+# Spawn the job operator (diagnose -> fix plan or escalate) detached; it records its own transition.
+_jobs_spawn_operator() {
+  local job="$1" d="$2" op="${WALKAWAY_JOB_OPERATOR:-${JOBS_DIR}/job-operator.sh}" log
+  [[ -f "$op" ]] || return 0
+  log="${WALKAWAY_HOME}/logs/job-operator-${job}.log"
+  mkdir -p "${WALKAWAY_HOME}/logs"
+  nohup bash "$op" diagnose "$job" "$d" >> "$log" 2>&1 < /dev/null &
+  local p=$!
+  disown "$p" 2>/dev/null || true
+  jstate_update "$job" '.operator_pid = ($p|tonumber)' --arg p "$p"
+}
+
+_jobs_operator_alive() { local p; p=$(jstate_get "$1" .operator_pid); [[ -n "$p" ]] && kill -0 "$p" 2>/dev/null; }
+
+# jobs_fix_progress <job>: hook for FIXING jobs (fix build tracking, post-merge retry). job-operator.sh owns it.
+_jobs_fix_progress() {
+  local op="${WALKAWAY_JOB_OPERATOR:-${JOBS_DIR}/job-operator.sh}"
+  [[ -f "$op" ]] && bash "$op" progress "$1" "$2"
+  return 0
+}
+
+# Evaluate one job for today and apply the transition.
+jobs_evaluate() {
+  local cfg="$1" name="$2" job today now kind state res verdict detail
+  job=$(jobs_get "$cfg" "$name"); today=$(jobs_today); now=$(_jobs_now)
+  kind=$(jq -r '.kind // "daily"' <<< "$job")
+  [[ -f "$(_jstate_file "$name")" ]] || jstate_update "$name" '.date = $d | .state = "PENDING" | .since = ($n|tonumber) | .last_action = "first check"' --arg d "$today" --arg n "$now"
+  [[ "$kind" == "daily" ]] && _jobs_rollover "$name" "$today"
+  [[ "$kind" == "rolling" ]] && jstate_update "$name" '.date = $d' --arg d "$today"
+  if ! jobs_runs_on "$job" "$today"; then
+    jstate_update "$name" '.last_action = $a' --arg a "not scheduled today ($(jq -r '(.days // []) | join(",")' <<< "$job"))"
+    return 0
+  fi
+  state=$(jstate_get "$name" .state)
+  _jobs_operator_alive "$name" && { jstate_update "$name" '.last_action = "job operator running"'; return 0; }
+  # Daily job already OK today: nothing to re-check.
+  [[ "$kind" == "daily" && "$state" == "OK" ]] && return 0
+
+  local start end
+  start=$(_at "$today" "$(jq -r '.window.start // "00:00"' <<< "$job")")
+  end=$(_at "$today" "$(jq -r '.retry_end // "23:59"' <<< "$job")")
+  if [[ "$kind" == "daily" && "$state" == "PENDING" ]] && (( now < start )); then
+    jstate_update "$name" '.last_action = $a' --arg a "window opens $(jq -r '.window.start' <<< "$job")"
+    return 0
+  fi
+
+  res=$(jobs_check "$cfg" "$name" "$today")
+  verdict=$(jq -r .verdict <<< "$res"); detail=$(jq -r .detail <<< "$res")
+  jstate_update "$name" '.last_verdict = $v | .last_detail = $d | .checked_at = ($n|tonumber)' --arg v "$verdict" --arg d "$detail" --arg n "$now"
+
+  if [[ "$verdict" == "error" ]]; then
+    local n
+    n=$(( $(jstate_get "$name" .error_ticks || echo 0) + 1 ))
+    jstate_update "$name" '.error_ticks = ($n|tonumber) | .last_action = $a' --arg n "$n" --arg a "check error ($n): $detail"
+    (( n == WALKAWAY_JOB_ERROR_TICKS )) && jobs_transition "$name" ESCALATED "The $name check has failed $n times in a row ($(cut -c1-120 <<< "$detail")). Look at the check or the source?"
+    return 0
+  fi
+  jstate_update "$name" '.error_ticks = 0'
+
+  if [[ "$verdict" == "ok" ]]; then
+    jstate_update "$name" '.last_ok_at = ($n|tonumber) | .last_ok_date = $d | del(.retrying_since)' --arg n "$now" --arg d "$today"
+    jobs_transition "$name" OK "$detail"
+    return 0
+  fi
+
+  case "$state" in
+    FIXING)    _jobs_fix_progress "$name" "$today"; return 0 ;;
+    FAILED|ESCALATED) jstate_update "$name" '.last_action = $a' --arg a "still $verdict: $detail"; return 0 ;;
+  esac
+
+  local new
+  if [[ "$kind" == "rolling" ]]; then
+    case "$verdict" in
+      failed)  new=FAILED ;;
+      pending) new=PENDING ;;
+      retrying)
+        local rs win
+        rs=$(jstate_get "$name" .retrying_since); win=$(( $(jq -r '.retry_window_mins // 120' <<< "$job") * 60 ))
+        [[ -z "$rs" ]] && { rs=$now; jstate_update "$name" '.retrying_since = ($n|tonumber)' --arg n "$now"; }
+        if (( now - rs >= win )); then new=FAILED; detail="$detail (persisting $(( (now - rs) / 60 ))m)"; else new=RETRYING; fi ;;
+    esac
+    [[ "$verdict" != "retrying" ]] && jstate_update "$name" 'del(.retrying_since)'
+  else
+    case "$verdict" in
+      failed) new=FAILED ;;
+      retrying) if (( now < end )); then new=RETRYING; else new=FAILED; detail="not OK by $(jq -r .retry_end <<< "$job"): $detail"; fi ;;
+      pending)  if (( now < end )); then new=PENDING;  else new=FAILED; detail="not OK by $(jq -r .retry_end <<< "$job"): $detail"; fi ;;
+    esac
+  fi
+
+  if [[ "$new" == "FAILED" ]]; then
+    jobs_transition "$name" FAILED "$detail; diagnosing"
+    jstate_update "$name" '.failed_detail = $d' --arg d "$detail"
+    _jobs_spawn_operator "$name" "$today"
+  else
+    jobs_transition "$name" "$new" "$detail"
+  fi
+}
+
+# One pass over every enabled job (called from the supervisor tick while $WALKAWAY_HOME/jobs.enabled exists).
+jobs_tick() {
+  local cfg name
+  cfg=$(jobs_config) || { _jlog "cannot parse $WALKAWAY_JOBS_FILE"; return 1; }
+  while IFS= read -r name; do
+    [[ -n "$name" ]] || continue
+    jobs_evaluate "$cfg" "$name" || _jlog "$name: evaluate error"
+  done < <(jq -r '.jobs[] | select(.enabled == true) | .name' <<< "$cfg")
+}
+
+# Heartbeat lines: every enabled job scheduled today that is not OK and whose window has opened.
+jobs_heartbeat_lines() {
+  local cfg name job st today now
+  cfg=$(jobs_config) || return 0
+  today=$(jobs_today); now=$(_jobs_now)
+  while IFS= read -r name; do
+    job=$(jobs_get "$cfg" "$name")
+    jobs_runs_on "$job" "$today" || continue
+    st=$(jstate_get "$name" .state); st=${st:-PENDING}
+    [[ "$st" == "OK" ]] && continue
+    [[ "$st" == "PENDING" ]] && (( now < $(_at "$today" "$(jq -r '.window.start // "00:00"' <<< "$job")") )) && continue
+    echo "job $name: $st - $(jstate_get "$name" .last_action)"
+  done < <(jq -r '.jobs[] | select(.enabled == true) | .name' <<< "$cfg")
+}
+
+_fmt_et() { [[ -n "${1:-}" ]] && TZ=$JOBS_TZ date -r "$1" '+%m-%d %H:%M' || echo "-"; }
+
+# JOBS table for `walkaway status`.
+jobs_status() {
+  local cfg name job today st line
+  cfg=$(jobs_config) || { echo "JOBS: cannot parse $WALKAWAY_JOBS_FILE"; return 0; }
+  today=$(jobs_today)
+  echo ""
+  echo "JOBS ($today, job watching $( [[ -f "${WALKAWAY_HOME}/jobs.enabled" ]] && echo on || echo OFF))"
+  {
+    printf 'JOB\tTODAY\tLAST OK\tLAST ACTION\n'
+    while IFS= read -r name; do
+      job=$(jobs_get "$cfg" "$name")
+      if [[ "$(jq -r .enabled <<< "$job")" != "true" ]]; then
+        st="disabled"
+      elif ! jobs_runs_on "$job" "$today"; then
+        st="off today"
+      else
+        st=$(jstate_get "$name" .state); [[ "$(jstate_get "$name" .date)" == "$today" ]] || st="PENDING"
+        st=${st:-PENDING}
+      fi
+      line=$(jstate_get "$name" .last_action); line=${line:--}
+      printf '%s\t%s\t%s\t%s\n' "$name" "$st" "$(_fmt_et "$(jstate_get "$name" .last_ok_at)")" "$(cut -c1-110 <<< "$line")"
+    done < <(jobs_names "$cfg")
+  } | column -t -s $'\t'
+}
+
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
   cmd="${1:-}"; shift || true
   cfg=$(jobs_config) || { echo "jobs: cannot parse $WALKAWAY_JOBS_FILE" >&2; exit 1; }
@@ -215,6 +442,9 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
       [[ "${1:-}" == "--out" ]] && { out="${2:?file}"; shift 2; }
       if [[ -n "$out" ]]; then jobs_dump "$cfg" "$@" > "$out"; echo "wrote $out"; else jobs_dump "$cfg" "$@"; fi
       ;;
-    *) echo "Usage: jobs.sh list | check <job> [--date YYYY-MM-DD] | dump [--out F] [job=YYYY-MM-DD ...]" >&2; exit 1 ;;
+    tick)      jobs_tick ;;
+    status)    jobs_status ;;
+    heartbeat) jobs_heartbeat_lines ;;
+    *) echo "Usage: jobs.sh list | check <job> [--date YYYY-MM-DD] | dump [--out F] [job=YYYY-MM-DD ...] | tick | status | heartbeat" >&2; exit 1 ;;
   esac
 fi
