@@ -1,0 +1,25 @@
+# Phase 1 report - supervisor-v3-data (series.yaml + read-only count engine)
+
+- **data/series.yaml (new):** 49 entries = every Phase 0 inventory id (diff 0, `ac1-inventory-diff.txt`).
+  - 21 watched series, each with: owner repo, source, table + key (date / ISO yearweek / timestamp-range), filters, cadence, lag_days + ready_by, floor + floor_basis, historical yes/partial/no, ordered re-pull methods with ages/hours/guard, and the fix_hook contract.
+  - 28 excluded entries, each with a reason and covered_by; a read-only probe where a table exists.
+- **lib/data.sh (new), read-only:**
+  - `list`, `check <s> [--as-of]`, `dump`, `floors`, `inventory-diff`.
+  - Counts use one GET per period with `Prefer: count=exact` + `Range: 0-0`, run in parallel per series. The key reaches curl on stdin, as in jobs.sh, which it sources for the ET time helpers.
+  - Test seams: WALKAWAY_DATA_FILE / _NOW / _FIXTURES.
+  - Full dump of 49 entries: ~15 s. One series: ~1 s.
+- **AC1 dump (phase 1):** `ac1-series-check-dump-phase1.md`.
+  - 20 of 21 watched series PASS on real rows today.
+  - bb-showings-daily shows its real gap 11-09..11-13 and PASSes as of 2026-11-09 14:00 (the override in the same dump).
+- **Real-history checks:**
+  - `pulse-odds-snapshots --as-of "2026-10-19 09:00"` finds the real 10-15..10-18 outage as 4 missing periods.
+  - `amz-creator-connections --as-of "2026-10-25 12:00"` finds the real 10-22 short day (1 row vs floor 3).
+  - Both are regression fixtures for Phase 5.
+- **Floors re-derived from real rows** (`ac1-floors-rederived.tsv`): 16/21 match Phase 0. The 5 differences come from the moving window, each explained in floor_basis:
+  - cc 3 vs 4 and spc 38 vs 39: the medians moved by a day.
+  - bb: the last 25 present days are all 21; Phase 0's window had 19 and 20.
+  - member: 5065 corrected in the yaml (Phase 0 slip, 5040).
+  - odds: deliberately the 50% rule (22). Early October had 3 rows/day, so 43 is not structural.
+- Gates: shellcheck 0; parse 7, states 18, v2-AC1 12, jobs-states 38, job-operator 37, operator 68 (180/180). No live code path changed: the supervisor does not call data.sh yet.
+- Files: data/series.yaml, lib/data.sh, handoff evidence (ac1-*), phase0-inventory.md (floor corrections).
+- Next phase entry: none blocked.

@@ -1,0 +1,479 @@
+# Dated data series the walkaway supervisor watches for gaps (lib/data.sh). One entry per scheduled pull / cron /
+# agent found in both owner repos (supervisor-v3-data Phase 0: handoff/supervisor-v3-data-evidence/phase0-inventory.md).
+# Watched entries get gap detection + re-pull; excluded entries (watch: false) say why and, where a table exists,
+# carry a read-only probe so the dump proves the source is real. Times are local (America/New_York, the Mini).
+#
+#   name        series id (state files, incidents, ntfy lines)
+#   watch       true = gap detection on; false = listed only (reason + covered_by)
+#   owner_repo  repo that fix builds for this series run in
+#   source      Supabase project (sources below); reads are GETs, the key is read from env_file at call time
+#   table/key   key.column holds the period: type date (YYYY-MM-DD), yearweek (ISO YYYYWW int) or timestamp
+#               (rows counted inside the period's local-time range)
+#   filters     extra PostgREST filters (placeholders: {audrey_user}, {pulse_team})
+#   cadence     daily | weekly (period anchor = Monday) | monthly (anchor = the 1st)
+#   lag_days    days after the period anchor the data lands; ready_by = local time that day it must be complete.
+#               Before (anchor + lag_days) at ready_by the series' own pull/retries still own the period: no GAP.
+#   floor       rows per period at or above which the period is complete (Phase 0 formula: a constant count is
+#               structural, otherwise 50% of the 30-day / 8-week median); floor_basis says which
+#   historical  yes | partial | no: can the SOURCE re-pull a past period at all ("no" = a gap is lost data)
+#   repull      existing re-pull paths, tried in order; each covers `ages` (days/weeks/months before the current
+#               period) and optional local `hours` [start, end). Methods:
+#                 run_now   Showrunner run-now: writes extension_report_state.run_now_requested_at = now for one base
+#                           report_type (the column the run-now route sets; the extension pulls on its next poll)
+#                 http      GET {app_url}{path} with Bearer <cron_secret_var> (the route's own cron call)
+#                 command   a fixed local command (e.g. the ST URL trigger the login agent opens)
+#                 self_heal nothing to trigger: the series refills by itself; the try is the wait
+#               guard: amazon = business hours + no CC batch in flight + paced (guards.amazon)
+#               requires_fix: true = the hook a fix build adds (contract below); used only after that fix merged
+#   fix_hook    the date-range re-pull hook a fix build must add when no existing path covers a gap (the plan's
+#               "date-range run-now hooks"), stated as the exact trigger the supervisor will call after the merge
+
+defaults:
+  lookback_days: 14          # daily periods checked: the last 14 days
+  lookback_weeks: 4
+  lookback_months: 2
+  max_tries_per_day: 2       # re-pull tries per gap per local day
+  verify_after_mins: 30
+
+vars:
+  audrey_user: d3a83609-87a8-46aa-aa74-a2105d275748   # jobs.yaml vars.audrey_user
+  pulse_team: d14dce4f-9111-45e7-a52d-18d5f6dd04b6    # jobs.yaml vars.pulse_team
+
+sources:
+  audrey:
+    env_file: ~/Projects/audrey-ops-platform/.env.local
+    url_var: NEXT_PUBLIC_SUPABASE_URL
+    key_var: SUPABASE_SERVICE_ROLE_KEY
+    app_url: https://audrey-ops-platform.vercel.app      # extension/config.js:1 API_BASE
+    cron_secret_var: CRON_SECRET
+  throughline:
+    env_file: ~/Projects/Throughline/throughline-app/.env.local
+    url_var: NEXT_PUBLIC_SUPABASE_URL
+    key_var: SUPABASE_SERVICE_ROLE_KEY
+    app_url: https://throughlinepro.com
+    cron_secret_var: CRON_SECRET
+
+guards:
+  amazon:
+    business_hours: {start: "09:00", end: "19:00"}   # Showrunner BUSINESS_HOURS, extension/cc-optin-lib.js:53
+    pace_mins: 15                                    # at most one Amazon trigger per 15 min across all series
+    cc_batch:
+      source: audrey
+      query: "cc_optin_runs?select=session,status,cc_optin_batches(seq,status)&user_id=eq.{audrey_user}&run_date=eq.{today}"
+      # in flight = a run PLANNED/RUNNING or any batch SUBMITTED (20261024000001_cc_optin.sql:9-11)
+      predicate: 'any(.[]; (.status == "PLANNED" or .status == "RUNNING") or any((.cc_optin_batches // [])[]; .status == "SUBMITTED"))'
+
+series:
+  # ── Showrunner (audrey-ops-platform) ────────────────────────────────────────
+  - name: amz-tracking-offsite
+    title: Amazon tracking report, offsite store (tracking_offsite)
+    watch: true
+    owner_repo: ~/Projects/audrey-ops-platform
+    source: audrey
+    table: amazon_tracking_daily
+    key: {column: date, type: date}
+    filters: "user_id=eq.{audrey_user}&store_id=eq.offsite"
+    cadence: daily
+    lag_days: 1
+    ready_by: "11:00"        # morning slot 07-10 ET; 11-13 landed 11-14 07:59 ET
+    floor: 13
+    floor_basis: "50% of 30-day median 27 (range 21..41)"
+    historical: yes          # Custom Date Range, extension/heal-lib.js:15-75
+    repull:
+      - {method: run_now, report_type: tracking_offsite, ages: [1], guard: amazon, verify_after_mins: 30}
+      - {method: self_heal, ages: [2, 3, 4, 5, 6, 7, 8], verify_after_mins: 180, note: "extension self-heal: /api/ingest/amazon/missing (today-8..today-2) + heal-lib.js, every poll tick"}
+      - {method: command, requires_fix: true, ages: all, guard: amazon, verify_after_mins: 60, command: 'open -g -a "Google Chrome" "https://audrey-ops-platform.vercel.app/#sr-ext-repull=tracking_offsite&from={from}&to={to}"'}
+    fix_hook: "Showrunner extension URL trigger: a tab opened on https://audrey-ops-platform.vercel.app/#sr-ext-repull=<report_type>&from=YYYY-MM-DD&to=YYYY-MM-DD pulls exactly those dates through the existing heal path (runReport customDate), respecting runDuePassesLock and the CC opt-in session, then closes itself"
+
+  - name: amz-tracking-onsite
+    title: Amazon tracking report, onsite store (tracking_onsite)
+    watch: true
+    owner_repo: ~/Projects/audrey-ops-platform
+    source: audrey
+    table: amazon_tracking_daily
+    key: {column: date, type: date}
+    filters: "user_id=eq.{audrey_user}&store_id=eq.onsite"
+    cadence: daily
+    lag_days: 1
+    ready_by: "11:00"
+    floor: 2
+    floor_basis: "structural: all 30 days = 2"
+    historical: yes
+    repull:
+      - {method: run_now, report_type: tracking_onsite, ages: [1], guard: amazon, verify_after_mins: 30}
+      - {method: self_heal, ages: [2, 3, 4, 5, 6, 7, 8], verify_after_mins: 180, note: "extension self-heal (as offsite)"}
+      - {method: command, requires_fix: true, ages: all, guard: amazon, verify_after_mins: 60, command: 'open -g -a "Google Chrome" "https://audrey-ops-platform.vercel.app/#sr-ext-repull=tracking_onsite&from={from}&to={to}"'}
+    fix_hook: "Showrunner extension URL trigger #sr-ext-repull=tracking_onsite&from=..&to=.. (as amz-tracking-offsite)"
+
+  - name: amz-creator-connections
+    title: Amazon Creator Connections report (cc morning/evening)
+    watch: true
+    owner_repo: ~/Projects/audrey-ops-platform
+    source: audrey
+    table: amazon_creator_connections_daily
+    key: {column: date, type: date}
+    filters: "user_id=eq.{audrey_user}"
+    cadence: daily
+    lag_days: 2
+    ready_by: "11:00"        # morning pulls D-2; 11-12 landed 11-14 07:39 ET
+    floor: 3
+    floor_basis: "50% of 30-day median 7 (range 1..88)"
+    historical: yes          # fromDate/toDate, extension/connect-runner.js:495-530
+    repull:
+      - {method: run_now, report_type: cc, ages: [2], hours: ["00:00", "12:00"], guard: amazon, verify_after_mins: 25, note: "run-now before noon pulls D-2 (poll/route.ts:129-133)"}
+      - {method: run_now, report_type: cc, ages: [1], hours: ["12:00", "24:00"], guard: amazon, verify_after_mins: 25, note: "run-now after noon pulls D-1"}
+      - {method: command, requires_fix: true, ages: all, guard: amazon, verify_after_mins: 60, command: 'open -g -a "Google Chrome" "https://audrey-ops-platform.vercel.app/#sr-ext-repull=cc&from={from}&to={to}"'}
+    fix_hook: "Showrunner extension URL trigger #sr-ext-repull=cc&from=..&to=.. through runConnectReport (as amz-tracking-offsite)"
+
+  - name: amz-sponsored-products
+    title: Amazon Sponsored Products Connect report (spc morning/evening)
+    watch: true
+    owner_repo: ~/Projects/audrey-ops-platform
+    source: audrey
+    table: amazon_sponsored_products_daily
+    key: {column: date, type: date}
+    filters: "user_id=eq.{audrey_user}"
+    cadence: daily
+    lag_days: 2
+    ready_by: "11:00"        # 11-12 landed 11-14 07:43 ET
+    floor: 38
+    floor_basis: "50% of 30-day median 77 (range 49..110)"
+    historical: yes
+    repull:
+      - {method: run_now, report_type: spc, ages: [2], hours: ["00:00", "12:00"], guard: amazon, verify_after_mins: 25}
+      - {method: run_now, report_type: spc, ages: [1], hours: ["12:00", "24:00"], guard: amazon, verify_after_mins: 25}
+      - {method: self_heal, ages: [3, 4, 5, 6, 7, 8], verify_after_mins: 180, note: "extension self-heal covers spc (missing/route.ts:13-18)"}
+      - {method: command, requires_fix: true, ages: all, guard: amazon, verify_after_mins: 60, command: 'open -g -a "Google Chrome" "https://audrey-ops-platform.vercel.app/#sr-ext-repull=spc&from={from}&to={to}"'}
+    fix_hook: "Showrunner extension URL trigger #sr-ext-repull=spc&from=..&to=.. (as amz-tracking-offsite)"
+
+  - name: amz-connect-summary
+    title: Amazon Connect summary (connect_summary morning/evening, rolling 35 days)
+    watch: true
+    owner_repo: ~/Projects/audrey-ops-platform
+    source: audrey
+    table: amazon_connect_summary_daily
+    key: {column: date, type: date}
+    filters: "user_id=eq.{audrey_user}"
+    cadence: daily
+    lag_days: 1
+    ready_by: "11:00"
+    floor: 2
+    floor_basis: "structural: all 30 days = 2 (one row per program)"
+    historical: yes
+    repull:
+      - {method: self_heal, ages: all, verify_after_mins: 720, note: "every morning/evening run re-pulls the last 35 days (background.js:572, connect-runner.js:280-289)"}
+    fix_hook: "Showrunner extension URL trigger #sr-ext-repull=connect_summary&from=..&to=.."
+
+  - name: markable-spend
+    title: Markable daily spend (07:00 + 20:00 pulls)
+    watch: true
+    owner_repo: ~/Projects/audrey-ops-platform
+    source: audrey
+    table: markable_spend_daily
+    key: {column: report_date, type: date}
+    filters: "user_id=eq.{audrey_user}"
+    cadence: daily
+    lag_days: 1
+    ready_by: "09:00"        # 07:00 pass; 11-13 landed 11-14 06:59 ET
+    floor: 1
+    floor_basis: "structural: all 30 days = 1"
+    historical: yes
+    repull:
+      - {method: self_heal, ages: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], verify_after_mins: 720, note: "each pass re-pulls month-to-date, prior month when day <= 10 (markable-lib.js:64-77)"}
+    fix_hook: "Showrunner extension URL trigger #sr-ext-repull=markable_spend&from=..&to=.. (Markable API takes startDate/endDate, markable-lib.js:5-16)"
+
+  - name: meta-daily-metrics
+    title: Meta ads daily insights (Vercel cron meta-sync)
+    watch: true
+    owner_repo: ~/Projects/audrey-ops-platform
+    source: audrey
+    table: meta_daily_metrics
+    key: {column: date, type: date}
+    filters: "user_id=eq.{audrey_user}"
+    cadence: daily
+    lag_days: 1
+    ready_by: "09:00"        # cron 12:00 UTC
+    floor: 1
+    floor_basis: "50% of 30-day median 3 (range 3..9)"
+    historical: yes          # time_range since/until, lib meta-sync.ts:159-163
+    repull:
+      - {method: http, path: /api/cron/meta-sync, ages: [1, 2, 3], verify_after_mins: 15, note: "re-pulls (latest stored - 3)..yesterday (meta-sync.ts:136-162)"}
+    fix_hook: "GET /api/cron/meta-sync?from=YYYY-MM-DD&to=YYYY-MM-DD (CRON_SECRET) re-pulls exactly that range"
+
+  # ── Throughline (throughline-app) ───────────────────────────────────────────
+  - name: st-showings-daily
+    title: ShowingTime daily showings (extension daily pull + retries)
+    watch: true
+    owner_repo: ~/Projects/Throughline/throughline-app
+    source: throughline
+    table: pulse_showings_daily
+    key: {column: obs_date, type: date}
+    filters: "is_total=eq.true"
+    cadence: daily
+    lag_days: 1
+    ready_by: "12:45"        # after the 12:30 failed-date retry (jobs.yaml showingtime retry_end)
+    floor: 1
+    floor_basis: "structural: one is_total row per day, all 30 days"
+    historical: yes          # FromDate/ToDate, pull-core.js:80-93
+    repull:
+      - {method: command, ages: [1, 2, 3, 4, 5, 6, 7, 8], verify_after_mins: 30, command: 'open -g -a "Google Chrome" "https://throughlinepro.com/#tl-ext-run-daily"', note: "URL trigger pulls D-1..D-8 (background.js:89-99, pull-core.js:70-75)"}
+      - {method: command, requires_fix: true, ages: all, verify_after_mins: 45, command: 'open -g -a "Google Chrome" "https://throughlinepro.com/#tl-ext-repull=st&from={from}&to={to}"'}
+    fix_hook: "Throughline extension URL trigger: https://throughlinepro.com/#tl-ext-repull=st&from=YYYY-MM-DD&to=YYYY-MM-DD runs the daily pull (runJob mode daily) for exactly those dates, then closes the tab"
+
+  - name: bb-showings-daily
+    title: BrokerBay daily showings (extension, after ST)
+    watch: true
+    owner_repo: ~/Projects/Throughline/throughline-app
+    source: throughline
+    table: pulse_bb_showings_daily
+    key: {column: obs_date, type: date}
+    filters: "is_total=eq.true"
+    cadence: daily
+    lag_days: 1
+    ready_by: "13:00"        # BB runs after ST terminal; 11-08 captured 11-09 06:20 ET
+    floor: 10
+    floor_basis: "50% of 30-day median 21 (range 19..21)"
+    historical: yes          # START_BB_BACKFILL up to 90 days (bb-core.js:955-993)
+    repull:
+      - {method: command, ages: [1], verify_after_mins: 45, command: 'open -g -a "Google Chrome" "https://throughlinepro.com/#tl-ext-run-daily"', note: "the ST URL trigger sets setBbPending(true) (background.js:95): BB pulls yesterday after ST"}
+      - {method: command, requires_fix: true, ages: all, verify_after_mins: 45, command: 'open -g -a "Google Chrome" "https://throughlinepro.com/#tl-ext-repull=bb&from={from}&to={to}"'}
+    fix_hook: "Throughline extension URL trigger: https://throughlinepro.com/#tl-ext-repull=bb&from=YYYY-MM-DD&to=YYYY-MM-DD runs START_BB for each date (pullTableauDaily date, ET dates), then closes the tab"
+
+  - name: st-showings-forward
+    title: ShowingTime forward book snapshot (extension, after ST)
+    watch: true
+    owner_repo: ~/Projects/Throughline/throughline-app
+    source: throughline
+    table: pulse_showings_forward
+    key: {column: snapshot_date, type: date}
+    filters: "is_total=eq.true"
+    cadence: daily
+    lag_days: 0
+    ready_by: "13:00"        # 11-14 captured 11-14 06:39 ET
+    floor: 4
+    floor_basis: "structural: all 27 days = 4 (horizons 0..3)"
+    historical: no           # as-of snapshot of the forward book: a missed day cannot be rebuilt
+    repull:
+      - {method: command, ages: [0], verify_after_mins: 45, command: 'open -g -a "Google Chrome" "https://throughlinepro.com/#tl-ext-run-daily"', note: "today only: the forward pull runs right after a successful ST daily"}
+
+  - name: pulse-daily-snapshots
+    title: Pulse daily snapshots (Vercel cron pulse-daily-sync + ifMissing)
+    watch: true
+    owner_repo: ~/Projects/Throughline/throughline-app
+    source: throughline
+    table: pulse_daily_snapshots
+    key: {column: snapshot_date, type: date}
+    filters: "team_id=eq.{pulse_team}&geo_type=eq.central_oh"
+    cadence: daily
+    lag_days: 1
+    ready_by: "07:00"        # cron 07:30 UTC, ifMissing 10:00 UTC; 11-14 created 11-15 02:36 ET
+    floor: 1
+    floor_basis: "structural: one central_oh row per day, all 30 days"
+    historical: partial      # POST /api/admin/pulse-backfill aggregate recomputes from listing intervals
+    repull:
+      - {method: http, path: "/api/cron/pulse-daily-sync?ifMissing=1", ages: [1], verify_after_mins: 20, note: "skips when yesterday (UTC) is present for every team (route.ts:24-36,60)"}
+    fix_hook: "GET /api/cron/pulse-daily-sync?from=YYYY-MM-DD&to=YYYY-MM-DD (CRON_SECRET) runs the pulse-backfill aggregate for exactly that range"
+
+  - name: pulse-odds-snapshots
+    title: Pulse odds snapshots (Vercel cron pulse-macro)
+    watch: true
+    owner_repo: ~/Projects/Throughline/throughline-app
+    source: throughline
+    table: pulse_odds_snapshots
+    key: {column: snapshot_date, type: date}
+    filters: ""
+    cadence: daily
+    lag_days: 0
+    ready_by: "08:00"        # cron 10:00 UTC; 11-14 created 05:00 ET
+    floor: 22
+    floor_basis: "50% of 43: 43 every day for the last 27 days, but the count is not structural (one row per market; 2026-10-05..10-11 had 3), so the 50% rule applies"
+    historical: no           # as-of-today market odds
+    repull:
+      - {method: http, path: /api/cron/pulse-macro, ages: [0], verify_after_mins: 15}
+
+  - name: pulse-events-refresh
+    title: Pulse events scrape run (Vercel cron pulse-events-refresh)
+    watch: true
+    owner_repo: ~/Projects/Throughline/throughline-app
+    source: throughline
+    table: pulse_events_refresh_runs
+    key: {column: ran_at, type: timestamp}
+    filters: ""
+    cadence: daily
+    lag_days: 0
+    ready_by: "08:00"        # cron 10:00 UTC; ran 11-15 05:01 ET
+    floor: 1
+    floor_basis: "structural: one run row per day, all 27 days"
+    historical: no           # a run ledger: only today's run can be re-run
+    repull:
+      - {method: http, path: /api/cron/pulse-events-refresh, ages: [0], verify_after_mins: 15}
+
+  - name: pulse-weekly-stats
+    title: Pulse weekly stats (rolled up by pulse-daily-sync)
+    watch: true
+    owner_repo: ~/Projects/Throughline/throughline-app
+    source: throughline
+    table: pulse_weekly_stats
+    key: {column: year_week, type: yearweek}
+    filters: "team_id=eq.{pulse_team}&geo_type=eq.central_oh"
+    cadence: weekly
+    lag_days: 7              # week W is final the Monday after
+    ready_by: "07:00"
+    floor: 1
+    floor_basis: "structural: one central_oh row per week, all 8 weeks"
+    historical: partial
+    repull: []
+    fix_hook: "GET /api/cron/pulse-daily-sync?from=..&to=.. (see pulse-daily-snapshots) also rolls up the weeks it touches"
+
+  - name: pulse-signal-scores
+    title: Pulse signal scores (Vercel cron pulse-signals)
+    watch: true
+    owner_repo: ~/Projects/Throughline/throughline-app
+    source: throughline
+    table: pulse_signal_scores
+    key: {column: year_week, type: yearweek}
+    filters: "team_id=eq.{pulse_team}"
+    cadence: weekly
+    lag_days: 7
+    ready_by: "07:00"
+    floor: 264
+    floor_basis: "50% of 8-week median 528 (range 515..534)"
+    historical: yes
+    repull:
+      - {method: http, path: /api/cron/pulse-signals, ages: [0, 1, 2, 3, 4, 5, 6], verify_after_mins: 20, note: "recomputes the current + 6 trailing weeks"}
+
+  - name: pulse-market-health
+    title: Pulse market health weekly (Vercel cron pulse-market-health)
+    watch: true
+    owner_repo: ~/Projects/Throughline/throughline-app
+    source: throughline
+    table: pulse_market_health_weekly
+    key: {column: year_week, type: yearweek}
+    filters: "team_id=eq.{pulse_team}"
+    cadence: weekly
+    lag_days: 7
+    ready_by: "07:00"
+    floor: 264
+    floor_basis: "50% of 8-week median 529 (range 517..536)"
+    historical: yes
+    repull:
+      - {method: http, path: /api/cron/pulse-market-health, ages: [0, 1, 2, 3, 4, 5, 6], verify_after_mins: 20}
+
+  - name: tma-cohort-showings
+    title: ShowingTime TMA zip cohorts (extension, Mondays)
+    watch: true
+    owner_repo: ~/Projects/Throughline/throughline-app
+    source: throughline
+    table: recap_cohort_showings
+    key: {column: year_week, type: yearweek}
+    filters: "team_id=eq.{pulse_team}"
+    cadence: weekly
+    lag_days: 7              # week W pulled Monday W+1; 202645 computed 11-09 06:28 ET
+    ready_by: "13:00"
+    floor: 256
+    floor_basis: "50% of 8-week median 512 (range 456..586)"
+    historical: yes          # manifest re-adds missing weeks of the last 13 (tma-manifest.ts:100-108,204)
+    repull:
+      - {method: self_heal, ages: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], verify_after_mins: 10080, note: "next Monday's TMA run re-adds missing weeks"}
+    fix_hook: "Throughline extension URL trigger #tl-ext-repull=tma&from=..&to=.. runs START_TMA (force) for those weeks"
+
+  - name: pulse-showings-weekly
+    title: Pulse showings weekly rollup (daily-ingest)
+    watch: true
+    owner_repo: ~/Projects/Throughline/throughline-app
+    source: throughline
+    table: pulse_showings_weekly
+    key: {column: year_week, type: yearweek}
+    filters: "team_id=eq.{pulse_team}"
+    cadence: weekly
+    lag_days: 7
+    ready_by: "13:00"        # 202645 uploaded 11-09 06:09 ET
+    floor: 1
+    floor_basis: "structural: one row per week, all 8 weeks"
+    historical: yes          # rebuilt when a daily ingest of that week lands
+    repull:
+      - {method: command, ages: [1], verify_after_mins: 45, command: 'open -g -a "Google Chrome" "https://throughlinepro.com/#tl-ext-run-daily"', note: "the daily ingest of D-1..D-8 rolls up last week (daily-ingest/route.ts:89-110)"}
+
+  - name: recap-reports
+    title: ShowingTime recap report PDFs (extension, Mondays)
+    watch: true
+    owner_repo: ~/Projects/Throughline/throughline-app
+    source: throughline
+    table: report_pdfs
+    key: {column: received_at, type: timestamp}
+    filters: "team_id=eq.{pulse_team}&received_from_email=eq.recap-extension@showingtime.local"
+    cadence: weekly
+    lag_days: 0              # received the Monday of the week they are filed under (ET)
+    ready_by: "13:00"
+    floor: 15
+    floor_basis: "50% of 8-week median 31 (weeks 202639..202646: 29..33; 202638 = 51)"
+    historical: unknown
+    repull: []
+    fix_hook: "Throughline extension URL trigger #tl-ext-repull=recap&from=..&to=.. runs START_RECAP (force)"
+
+  - name: curb-inquiry-results
+    title: Curb inquiry scan (Vercel cron, Mondays)
+    watch: true
+    owner_repo: ~/Projects/Throughline/throughline-app
+    source: throughline
+    table: curb_inquiry_results
+    key: {column: week_date, type: date}   # week_date = the scan Monday
+    filters: "team_id=eq.{pulse_team}"
+    cadence: weekly
+    lag_days: 0
+    ready_by: "08:00"        # cron 10:30 UTC Monday; 11-09 scanned 05:30 ET
+    floor: 1
+    floor_basis: "50% of 9-week median 2 (range 1..2)"
+    historical: no           # trailing 7 days as of the scan
+    repull: []
+
+  - name: pulse-member-snapshots
+    title: Pulse member snapshot (Vercel cron, 1st of the month)
+    watch: true
+    owner_repo: ~/Projects/Throughline/throughline-app
+    source: throughline
+    table: pulse_member_snapshots
+    key: {column: snapshot_date, type: date}
+    filters: "team_id=eq.{pulse_team}"
+    cadence: monthly
+    lag_days: 0
+    ready_by: "08:00"        # cron 06:00 UTC on the 1st
+    floor: 5065
+    floor_basis: "50% of 3-month median 10131 (10082 / 10131 / 10161)"
+    historical: no           # live roster
+    repull: []
+
+  # ── excluded: listed so the inventory diff is 0, never gap-checked ───────────
+  - {name: amz-tracking-offsite-today, watch: false, owner_repo: ~/Projects/audrey-ops-platform, reason: "evening intra-day pull of today into amazon_tracking_daily; the next morning's D-1 pull replaces it (amazon-ingest.ts:24-31)", covered_by: amz-tracking-offsite,
+     probe: {source: audrey, query: "extension_report_state?select=report_type,last_success_at&user_id=eq.{audrey_user}&report_type=eq.tracking_offsite_today"}}
+  - {name: amz-bounties, watch: false, owner_repo: ~/Projects/audrey-ops-platform, reason: "a no-data day writes no rows by design (ingest/amazon/route.ts:158-183; 6 row-days in 30), so a missing day is indistinguishable from zero bounties", covered_by: "jobs.yaml extension-reports (bounty success within 26 h)",
+     probe: {source: audrey, query: "amazon_bounties_daily?select=date,created_at&user_id=eq.{audrey_user}&order=date.desc&limit=1"}}
+  - {name: amz-self-heal, watch: false, owner_repo: ~/Projects/audrey-ops-platform, reason: "the extension's repair loop (heal-lib.js), not a pull of its own", covered_by: "it is the self_heal re-pull path of amz-tracking-* and amz-sponsored-products"}
+  - {name: sr-daily-digest, watch: false, owner_repo: ~/Projects/audrey-ops-platform, reason: "Vercel cron that sends the morning email (send, not a pull)", covered_by: "-"}
+  - {name: sr-evening-digest, watch: false, owner_repo: ~/Projects/audrey-ops-platform, reason: "Vercel cron that sends the evening email; its ordered_preview_log row is derived and only written when ordered > 0", covered_by: "-"}
+  - {name: idea-list-asin-stats, watch: false, owner_repo: ~/Projects/audrey-ops-platform, reason: "manual popup refresh, no scheduler (background.js:1610); one row per ASIN, not dated", covered_by: "-"}
+  - {name: cc-optin-am, watch: false, owner_repo: ~/Projects/audrey-ops-platform, reason: "live opt-in action, not a data pull", covered_by: "jobs.yaml cc-optin-am"}
+  - {name: cc-optin-pm, watch: false, owner_repo: ~/Projects/audrey-ops-platform, reason: "live opt-in action (PM session off since 10/31)", covered_by: "jobs.yaml cc-optin-pm (disabled)"}
+  - {name: spc-optin, watch: false, owner_repo: ~/Projects/audrey-ops-platform, reason: "live opt-in action, not a data pull", covered_by: "jobs.yaml spc"}
+  - {name: bf-daily, watch: false, owner_repo: ~/Projects/audrey-ops-platform, reason: "list build/publish action, not a data pull", covered_by: "jobs.yaml bf-daily"}
+  - {name: st-session-state, watch: false, owner_repo: ~/Projects/Throughline/throughline-app, reason: "st_session_attempts is an attempt ledger (table exists since 11-13)", covered_by: "jobs.yaml showingtime",
+     probe: {source: throughline, query: "st_session_attempts?select=attempt_date,outcome,trigger,started_at&team_id=eq.{pulse_team}&order=started_at.desc&limit=1"}}
+  - {name: st-listing-refresh, watch: false, owner_repo: ~/Projects/Throughline/throughline-app, reason: "2-minute single-listing job queue (background.js:44-45), no dated rows", covered_by: "-"}
+  - {name: pulse-macro-series, watch: false, owner_repo: ~/Projects/Throughline/throughline-app, reason: "release-driven observations (FRED etc.), no per-day expectation", covered_by: "pulse-odds-snapshots (the same pulse-macro cron's daily run)",
+     probe: {source: throughline, query: "pulse_macro_series?select=series_id,obs_date&order=obs_date.desc&limit=1"}}
+  - {name: pulse-revision-sweep, watch: false, owner_repo: ~/Projects/Throughline/throughline-app, reason: "rotating repair of 1-6-month-old snapshots, no dated output", covered_by: "-"}
+  - {name: pulse-reconcile, watch: false, owner_repo: ~/Projects/Throughline/throughline-app, reason: "reconcile stamp + fact statuses, no dated output", covered_by: "-"}
+  - {name: showingtime-maintenance, watch: false, owner_repo: ~/Projects/Throughline/throughline-app, reason: "deletes/reaps jobs and photo cache", covered_by: "-"}
+  - {name: pulse-events, watch: false, owner_repo: ~/Projects/Throughline/throughline-app, reason: "Monday reminder send", covered_by: "-"}
+  - {name: daily-pulse-brief, watch: false, owner_repo: ~/Projects/Throughline/throughline-app, reason: "brief send (PROTECTED send), not a data pull", covered_by: "-",
+     probe: {source: throughline, query: "pulse_brief_sends?select=send_date&order=send_date.desc&limit=1"}}
+  - {name: recap-offer-sync, watch: false, owner_repo: ~/Projects/Throughline/throughline-app, reason: "offers upsert, not dated", covered_by: "-"}
+  - {name: offer-inbox-scan, watch: false, owner_repo: ~/Projects/Throughline/throughline-app, reason: "inbox scan every 5 min; rows depend on incoming mail", covered_by: "-"}
+  - {name: gmail-poll, watch: false, owner_repo: ~/Projects/Throughline/throughline-app, reason: "inbox scan every 5 min (ST PDFs); rows depend on incoming mail", covered_by: "-"}
+  - {name: field-guide-dispatch, watch: false, owner_repo: ~/Projects/Throughline/throughline-app, reason: "lead queue every 5 min", covered_by: "-"}
+  - {name: monday-autorun, watch: false, owner_repo: ~/Projects/Throughline/throughline-app, reason: "newsletter generation (Inngest), not a pull", covered_by: "jobs.yaml realtea-generate"}
+  - {name: monday-fallback, watch: false, owner_repo: ~/Projects/Throughline/throughline-app, reason: "launchd fallback for generation", covered_by: "jobs.yaml realtea-generate"}
+  - {name: substack-publisher, watch: false, owner_repo: ~/Projects/Throughline/throughline-app, reason: "publish (PROTECTED)", covered_by: "jobs.yaml realtea-publish"}
+  - {name: st-login-agent, watch: false, owner_repo: ~/Projects/Throughline/throughline-app, reason: "launchd login/decision agent; reads, triggers the ST pull", covered_by: "jobs.yaml showingtime"}
+  - {name: offer-tracker, watch: false, owner_repo: ~/Projects/Throughline/throughline-app, reason: "launchd plist in repo, not installed in ~/Library/LaunchAgents", covered_by: "-"}
+  - {name: inngest-unregistered, watch: false, owner_repo: ~/Projects/Throughline/throughline-app, reason: "pulse-nightly, pulse-macro, pulse-events, spark-sync exist in inngest/functions but are not registered (app/api/inngest/route.ts serves only mondayAutorun)", covered_by: "-"}

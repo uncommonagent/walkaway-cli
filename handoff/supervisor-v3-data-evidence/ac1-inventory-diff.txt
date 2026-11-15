@@ -1,0 +1,2 @@
+# AC1 inventory diff (phase0-inventory.txt vs data/series.yaml names): empty = 0 differences
+rc=0 ids=49 yaml=49

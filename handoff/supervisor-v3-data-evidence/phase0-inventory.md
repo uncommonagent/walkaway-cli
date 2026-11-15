@@ -12,7 +12,9 @@ Repos: Showrunner = `~/Projects/audrey-ops-platform` (source `audrey`, user `d3a
 30-day (daily) / 8-week (weekly) per-period row counts over the periods present (`phase0-floors.tsv`):
 - every period has the same count c -> floor = c ("structural": e.g. one ST total row per day, 2 connect programs);
 - otherwise floor = max(1, floor(median / 2)) (the plan's "rows >= 50% of 30-day median").
-Monthly `pulse-member-snapshots`: 10082 / 10131 / 10161 rows on 09-01 / 10-01 / 11-01 -> floor 5040.
+Monthly `pulse-member-snapshots`: 10082 / 10131 / 10161 rows on 09-01 / 10-01 / 11-01 -> floor 5065 (Phase 1 corrected an arithmetic slip, 5040).
+`pulse-odds-snapshots` uses the 50% rule (22), not structural 43: one row per market, and 2026-10-05..10-11 had 3 rows/day
+(found by the Phase 1 as-of check), so the count moves as markets roll off.
 
 ## Landing times (ready_by calibration, real rows)
 | series | period D lands (ET) | evidence row |
@@ -46,7 +48,7 @@ Monthly `pulse-member-snapshots`: 10082 / 10131 / 10161 rows on 09-01 / 10-01 / 
 | bb-showings-daily | TL | extension, after ST terminal (`bb-core.js:611-612`) | pulse_bb_showings_daily.obs_date (is_total=true) | daily | D+1 13:00 | 10 (50% of 21) | age 1: the ST URL trigger (it calls `setBbPending(true)`, `background.js:95`, so BB pulls yesterday after ST). Ages 2+: **none scriptable**: popup `START_BB_BACKFILL {days}` only (`bb-core.js:955-993`); no external messaging (no externally_connectable) | yes, up to 90 days |
 | st-showings-forward | TL | extension, after ST daily | pulse_showings_forward.snapshot_date (is_total=true) | daily | D 13:00 | 4 (structural) | none | **no**: as-of snapshot of the forward book |
 | pulse-daily-snapshots | TL | Vercel cron `30 7 * * *` + `?ifMissing=1` `0 10 * * *` | pulse_daily_snapshots.snapshot_date (team, geo_type=central_oh) | daily | D+1 07:00 | 1 (structural) | age 1: GET `https://throughlinepro.com/api/cron/pulse-daily-sync?ifMissing=1` (Bearer CRON_SECRET, route.ts:41-60); older: `POST /api/admin/pulse-backfill` (HMAC, not wired - operator) | partial: backfill recomputes from listing intervals |
-| pulse-odds-snapshots | TL | Vercel cron pulse-macro `0 10 * * *` | pulse_odds_snapshots.snapshot_date | daily | D 08:00 | 43 (structural) | age 0: GET `/api/cron/pulse-macro` | **no**: as-of today |
+| pulse-odds-snapshots | TL | Vercel cron pulse-macro `0 10 * * *` | pulse_odds_snapshots.snapshot_date | daily | D 08:00 | 22 (50% of 43; per-market count moves) | age 0: GET `/api/cron/pulse-macro` | **no**: as-of today |
 | pulse-events-refresh | TL | Vercel cron `0 10 * * *` | pulse_events_refresh_runs.ran_at (timestamp, UTC day) | daily | D 08:00 | 1 (structural) | age 0: GET `/api/cron/pulse-events-refresh` | n/a (run ledger: only today can be re-run) |
 | pulse-weekly-stats | TL | written by pulse-daily-sync nightly | pulse_weekly_stats.year_week (team, central_oh) | weekly | Mon after 07:00 | 1 (structural) | none (rollup of the daily sync; pulse-backfill for history) | partial (backfill) |
 | pulse-signal-scores | TL | Vercel cron `0 9 * * *` (current + 6 trailing weeks) | pulse_signal_scores.year_week (team) | weekly | Mon after 07:00 | 264 (50% of 528) | weeks 0-6: GET `/api/cron/pulse-signals` | yes (trailing 6 / `?scope=full`) |
@@ -55,7 +57,7 @@ Monthly `pulse-member-snapshots`: 10082 / 10131 / 10161 rows on 09-01 / 10-01 / 
 | pulse-showings-weekly | TL | daily-ingest weekly rollup (`daily-ingest/route.ts:89-110`) | pulse_showings_weekly.year_week (team) | weekly | Mon after 13:00 | 1 (structural) | none (rebuilt when a daily ingest of that week lands) | yes via ST |
 | recap-reports | TL | extension Mondays after ST+BB (`recap-core.js:63,586-591`) | report_pdfs.received_at (team, received_from_email=recap-extension@showingtime.local), ET week | weekly | Mon 13:00 | 15 (50% of 31) | none (popup `START_RECAP`) | unknown |
 | curb-inquiry-results | TL | Vercel cron `30 10 * * 1` | curb_inquiry_results.week_date (team; = scan Monday) | weekly | Mon 08:00 | 1 (50% of 2) | none | no (trailing 7 days as of the scan) |
-| pulse-member-snapshots | TL | Vercel cron `0 6 1 * *` | pulse_member_snapshots.snapshot_date (team; = 1st) | monthly | 1st 08:00 | 5040 (50% of 10131) | none | **no**: live roster |
+| pulse-member-snapshots | TL | Vercel cron `0 6 1 * *` | pulse_member_snapshots.snapshot_date (team; = 1st) | monthly | 1st 08:00 | 5065 (50% of 10131) | none | **no**: live roster |
 
 ## Excluded (listed in series.yaml with `watch: false` + reason; no gap detection)
 | id | why not a data series | covered by |
