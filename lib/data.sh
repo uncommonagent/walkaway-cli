@@ -515,11 +515,17 @@ _amazon_guard() {
   return 0
 }
 
-# _method_for <config> <series-json> <age> <fix_merged> -> "go <idx>" | "wait <reason>" | "none"
+# _method_for <config> <series-json> <age> <hook_merged> [post_fix] -> "go <idx>" | "wait <reason>" | "none"
+# A post_fix gap (its fix build merged) tries the fix's date-range hook first: the older paths already failed it.
 _method_for() {
-  local cfg="$1" s="$2" age="$3" fixed="$4" n i m h0 h1 now wait="" g
-  n=$(jq -r '(.repull // []) | length' <<< "$s"); now=$(_hhmm_now)
-  for (( i = 0; i < n; i++ )); do
+  local cfg="$1" s="$2" age="$3" fixed="$4" post="${5:-false}" i m h0 h1 now wait="" g order
+  now=$(_hhmm_now)
+  if [[ "$post" == "true" ]]; then
+    order=$(jq -r '(.repull // []) | to_entries | (map(select(.value.requires_fix == true)) + map(select(.value.requires_fix != true))) | .[].key' <<< "$s")
+  else
+    order=$(jq -r '(.repull // []) | keys[]' <<< "$s")
+  fi
+  for i in $order; do
     m=$(jq -c --argjson i "$i" '.repull[$i]' <<< "$s")
     [[ "$(jq -r '.requires_fix // false' <<< "$m")" == "true" && "$fixed" != "true" ]] && continue
     jq -e --argjson a "$age" '.ages == "all" or ((.ages // []) | index($a) != null)' <<< "$m" > /dev/null || continue
@@ -588,6 +594,7 @@ _fire() {
   m=$(jq -c --argjson i "$i" '.repull[$i]' <<< "$s"); method=$(jq -r .method <<< "$m"); name=$(jq -r .name <<< "$s")
   arg=$(jq -r '.report_type // .path // .command // ""' <<< "$m")
   [[ "$from" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ && "$to" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || return 2
+  mkdir -p "${WALKAWAY_HOME}/logs"
   if [[ -n "${WALKAWAY_DATA_TRIGGER_CMD:-}" ]]; then
     "$WALKAWAY_DATA_TRIGGER_CMD" "$name" "$method" "$arg" "$from" "$to" >> "${WALKAWAY_HOME}/logs/data-repull.log" 2>&1 || rc=$?
     _drepull_log "$name: stub $method $arg $from..$to rc=$rc"
@@ -654,7 +661,7 @@ data_act() {
     fi
     if (( td >= max )); then waits+="${p:5}: $max tries today; "; continue; fi
     age=$(_age_of "$s" "$p")
-    dec=$(_method_for "$cfg" "$s" "$age" "$fixed")
+    dec=$(_method_for "$cfg" "$s" "$age" "$fixed" "$(jq -r '.post_fix // false' <<< "$g")")
     case "$dec" in
       go\ *)  gi=${dec#go }; groups+=("$gi"$'\t'"$p") ;;
       wait\ *) waits+="${p:5}: ${dec#wait }; " ;;

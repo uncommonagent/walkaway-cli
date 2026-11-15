@@ -3,3 +3,4 @@
 *.pid
 tests/drill/work/
 tests/drill/work-jobs/
+tests/drill/work-data/

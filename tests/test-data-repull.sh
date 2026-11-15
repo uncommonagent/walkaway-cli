@@ -137,6 +137,15 @@ fresh
 out=$(WALKAWAY_DATA_FILE="$ROOT/data/series.yaml" bash -c "source '$ROOT/lib/data.sh'; cfg=\$(data_config); _run_now \"\$cfg\" \"\$(data_get \"\$cfg\" amz-tracking-offsite)\" cc_optin_runs; echo rc=\$?")
 check "a non-allow-listed report type is refused before any request" '[[ "$out" == *"rc=2"* ]] && grep -q "run_now refused: cc_optin_runs not allow-listed" "$S/logs/data-repull.log"'
 
+echo "R10 a post_fix gap tries the fix hook before the older path (which already failed it)"
+fresh; at "2026-11-18 13:00"
+fill scratch-amazon 2026-11-01 2026-11-17 9; fill scratch-amazon 2026-11-16 2026-11-16 0
+mkdir -p "$S/data/state"
+jq -n '{series: "scratch-amazon", ok_periods: [], hook_merged: true, fix_merged: true,
+        gaps: {"2026-11-16": {state: "OPEN", status: "missing", rows_before: 0, rows_now: 0, failed_tries: 0, tries_today: 0, post_fix: true}}}' > "$S/data/state/scratch-amazon.json"
+ev scratch-amazon
+check "age 2 (self-heal covers it) but post_fix -> the fix hook fires" '[[ "$(trig_n scratch-amazon)" == 1 ]] && grep -q "^scratch-amazon command echo fix-hook {from} {to} 2026-11-16 2026-11-16$" "$S/triggers.log"'
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 (( FAIL == 0 ))

@@ -98,6 +98,56 @@ bash lib/jobs.sh dump                # every job's check with its queries, row c
 
 The job operator (`lib/job-operator.sh`, headless `claude -p` with `templates/job-operator-prompt.md`, read-only tools) diagnoses from the rows, logs and owner-repo code, writes `handoff/job-incident-<job>-<date>.md` in `~/.walkaway-cli/job-fixes/<job>-<date>/`, and then either renders a template-v2 fix plan (`## Repo` = owner repo) that is queued/launched like any walkaway build (one per job per day, one builder per repo), or escalates ONE question when the cause or fix touches a PROTECTED action, needs the job's live action on a protected job, or is not high-confidence. After the fix merges it runs the job's safe retry path once (`retry.command`; only ShowingTime has one) and the next check confirms OK. The 09/13/17 heartbeat lists every non-OK job whose window has opened; `walkaway status` prints a JOBS table under the builds.
 
+## Data-series gap watching (data/series.yaml)
+
+```bash
+./install-supervisor.sh --data-on    # touch ~/.walkaway-cli/data.enabled (--data-off removes it)
+bash lib/data.sh list                # every scheduled pull/cron: watched series + excluded entries (with reason)
+bash lib/data.sh check bb-showings-daily [--as-of "2026-11-09 14:00"]   # read-only per-period row counts (JSON)
+bash lib/data.sh dump                # every entry's check (AC1 evidence); floors re-derives every floor from real rows
+bash lib/data.sh state <series>      # one series' gap state
+```
+
+`data/series.yaml` lists every scheduled pull, cron and agent in Showrunner (audrey-ops-platform) and Throughline (throughline-app). There are 49 entries: 21 watched dated series and 28 excluded with a reason, such as sends, actions already covered by jobs.yaml, inbox scans and repair crons.
+
+Each watched series names:
+- the table and its key column (date, ISO yearweek, or a timestamp range);
+- its filters and cadence (daily, optionally `days:` weekdays; weekly; monthly);
+- `lag_days` and `ready_by`: when the period's own pull and retries are done;
+- a floor (rows per period, from real 30-day medians);
+- whether the source can re-pull a past period at all;
+- its existing re-pull paths;
+- the `fix_hook` contract, a date-range hook a fix build adds when no path exists.
+
+Counts are read-only GETs with `Prefer: count=exact`; the service-role key is read at call time and passed to curl on stdin. Complete periods are cached and re-counted once a day.
+
+While data watching is on, every supervisor tick moves each gap (series, period) through these states:
+
+| State | Meaning | ntfy |
+|---|---|---|
+| OPEN | rows missing or under the floor after the period's ready_by (14-day / 4-week / 2-month lookback) | one line per series per tick, dates grouped |
+| REPULLING | the series' own re-pull fired for exactly the gap dates (or a self-heal wait started); verified at verify_at | - |
+| CLOSED | a count confirmed rows at/above the floor (rows before -> after, and via what) | one line |
+| FIXING | no re-pull path covers the gap, or the re-pull failed twice: the data operator queued/launched a template-v2 fix build | one line |
+| ESCALATED | one question for Jim: the dates are lost (the source cannot re-pull), a post-fix re-pull failed, or the cause is protected or unclear | one line, priority high |
+
+Re-pull paths are the series' own. Writing the run-now flag or calling a cron route is the same thing the app's own pull does.
+- `run_now`: the Showrunner run-now flag `extension_report_state.run_now_requested_at`, for one allow-listed report type.
+- `http`: the route's own cron GET with CRON_SECRET (meta-sync, pulse-daily-sync?ifMissing=1, pulse-macro, pulse-events-refresh, pulse-signals, pulse-market-health).
+- `command`: the ST URL trigger, which re-pulls D-1..D-8 and BrokerBay yesterday.
+- `self_heal`: the extension heals tracking/spc at today-8..today-2; connect, markable and TMA refill their own windows.
+
+Limits on every re-pull:
+- Amazon re-pulls only run in business hours (09:00-19:00), never while a CC batch is in flight, and at most one per 15 min across all series.
+- A gap gets at most 2 tries per day. A guard deferral does not count as a try.
+
+The data operator (`lib/data-operator.sh`, headless `claude -p` with `templates/data-operator-prompt.md`, read-only) works like the job operator:
+- It writes `job-incident-<series>-<date>.md`.
+- It then renders a fix plan whose `## Date-range re-pull hook` quotes the series' `fix_hook` verbatim, or it asks ONE question. Lost dates and post-fix failures are escalated without a model call.
+- One fix build per series per day; one builder per repo.
+
+After the fix merges, the gaps go back to OPEN and the hook (`requires_fix` in series.yaml) re-pulls exactly those dates. The count then confirms CLOSED. The 09/13/17 heartbeat lists only series with open gaps. `walkaway status` prints a DATA table (series, last complete, open gaps, last action) under JOBS.
+
 ## Flags
 
 | Flag | Description |
@@ -147,6 +197,11 @@ Edit this file to adjust the wrapper text. Variables substituted at runtime:
 ~/.walkaway-cli/jobs/state/<job>.json          Job day state (state, last OK, last action, fix build)
 ~/.walkaway-cli/job-fixes/<job>-<date>/handoff Incident, evidence JSON, generated fix plan
 ~/.walkaway-cli/logs/job-operator-<job>.log    Job operator runs
+~/.walkaway-cli/data.enabled                   Data watching on (flag file)
+~/.walkaway-cli/data/state/<series>.json       Gap state per series (gaps, cached complete periods, fix tracking)
+~/.walkaway-cli/data-fixes/<series>-<date>/handoff  Incident, evidence JSON, generated fix plan
+~/.walkaway-cli/logs/data-repull.log           Every re-pull trigger with the rows before
+~/.walkaway-cli/logs/data-operator-<series>.log Data operator runs
 ```
 
 ## Plan format requirements
