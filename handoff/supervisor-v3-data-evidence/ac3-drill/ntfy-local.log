@@ -1,0 +1,8 @@
+2026-11-15T12:22:08-0500	jim-walkaway-data-drill-045f6ee7	default	drill-busy: RUNNING - builder pid 44205, active 0m ago
+2026-11-15T12:22:09-0500	jim-walkaway-data-drill-045f6ee7	default	data drill-repull: OPEN - 2026-11-17 missing (0/10 rows)
+2026-11-15T12:22:11-0500	jim-walkaway-data-drill-045f6ee7	default	data drill-nopath: OPEN - 2026-11-12 missing (0/10 rows)
+2026-11-15T12:22:13-0500	jim-walkaway-data-drill-045f6ee7	default	data drill-lost: OPEN - 2026-11-16 missing (0/4 rows)
+2026-11-15T12:22:14-0500	jim-walkaway-data-drill-045f6ee7	high	data drill-lost: ESCALATED - drill-lost lost 2026-11-16 (0/4 rows): the source cannot re-pull a past day. Accept the loss, or fix the pull so it stops missing days?
+2026-11-15T12:22:20-0500	jim-walkaway-data-drill-045f6ee7	default	data drill-repull: CLOSED - 2026-11-17 rows 0 -> 12 (floor 10; via command: /Users/jimross/Projects/walkaway-cli/tests/drill/work-data/bin/land.sh drill-repull {from})
+2026-11-15T12:23:07-0500	jim-walkaway-data-drill-045f6ee7	default	data drill-nopath: FIXING - 2026-11-12: cause: The supervisor's re-pull cannot reach 2026-11-12 because scripts/pull.sh can only pull one date: scripts/pull.sh:17 sets `day=$(date -v-1d +%F)`, and ; fix build fix-data-drill-nopath-20261118 queued behind drill-busy in pull-drill
+2026-11-15T12:23:16-0500	jim-walkaway-data-drill-045f6ee7	default	data drill-nopath: CLOSED - 2026-11-12 rows 0 -> 12 (floor 10; via command (fix hook): bash /Users/jimross/Projects/walkaway-cli/tests/drill/work-data/pull-drill/scripts/pull.sh)

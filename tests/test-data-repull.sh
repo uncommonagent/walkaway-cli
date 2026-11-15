@@ -146,6 +146,39 @@ jq -n '{series: "scratch-amazon", ok_periods: [], hook_merged: true, fix_merged:
 ev scratch-amazon
 check "age 2 (self-heal covers it) but post_fix -> the fix hook fires" '[[ "$(trig_n scratch-amazon)" == 1 ]] && grep -q "^scratch-amazon command echo fix-hook {from} {to} 2026-11-16 2026-11-16$" "$S/triggers.log"'
 
+echo "R11 http trigger (Phase 6 live finding): a route that never answers in time = delivered; no connection = failed try"
+fresh
+printf 'Z=test-cron-secret\n' > "$S/env"
+PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')
+python3 - "$PORT" > /dev/null 2>&1 <<'PY' &
+import http.server, sys, time
+class H(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        time.sleep(5)   # a cold start / long sync: answers after the client timeout
+        self.send_response(200); self.end_headers(); self.wfile.write(b"{}")
+    def log_message(self, *a): pass
+http.server.HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
+PY
+SRV=$!
+sleep 1
+CFG=$(jq -cn --arg env "$S/env" --arg url "http://127.0.0.1:$PORT" '{sources: {scratch: {env_file: $env, url_var: "X", key_var: "Y", app_url: $url, cron_secret_var: "Z"}}}')
+SER='{"name":"scratch-http","source":"scratch"}'
+slow=$(WALKAWAY_DATA_HTTP_TIMEOUT=2 bash -c "source '$ROOT/lib/data.sh'; _http_get '$CFG' '$SER' /api/cron/x; echo rc=\$?")
+kill "$SRV" 2>/dev/null; wait "$SRV" 2>/dev/null
+refused=$(WALKAWAY_DATA_HTTP_TIMEOUT=2 bash -c "source '$ROOT/lib/data.sh'; _http_get '$CFG' '$SER' /api/cron/x; echo rc=\$?")
+check "slow route past the client timeout (curl exit 28) -> rc 0 (delivered; verify decides)" '[[ "$slow" == *"rc=0"* ]] && grep -q "(curl exit 28)" "$S/logs/data-repull.log"'
+check "connection refused (HTTP 000, curl exit 7) -> rc 1 (a failed try, not a fired re-pull)" '[[ "$refused" == *"rc=1"* ]] && grep -q "(curl exit 7)" "$S/logs/data-repull.log"'
+
+echo "R12 a re-pull never fires a send: the ST URL trigger waits until today's Pulse brief row exists (real bb entry)"
+fresh "$ROOT/data/series.yaml"
+fill bb-showings-daily 2026-11-01 2026-11-16 21; fill bb-showings-daily 2026-11-17 2026-11-17 0
+echo '[]' > "$S/guard.st_brief_sent.json"
+at "2026-11-18 13:05"; ev bb-showings-daily
+check "brief not sent yet -> no trigger, waiting with the reason" '[[ "$(trig_n bb-showings-daily)" == 0 ]] && grep -q "Pulse brief not sent yet" <<< "$(jq -r .last_action "$S/data/state/bb-showings-daily.json")" && [[ "$(gst bb-showings-daily 2026-11-17 tries_today)" == 0 ]]'
+echo '[{"send_date":"2026-11-18"}]' > "$S/guard.st_brief_sent.json"
+at "2026-11-18 13:07"; ev bb-showings-daily
+check "brief sent -> the ST URL trigger fires for 11-17 (age 1)" '[[ "$(trig_n bb-showings-daily)" == 1 ]] && grep -q "^bb-showings-daily command open -g -a \"Google Chrome\" \"https://throughlinepro.com/#tl-ext-run-daily\" 2026-11-17 2026-11-17$" "$S/triggers.log"'
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 (( FAIL == 0 ))

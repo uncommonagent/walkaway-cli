@@ -1,0 +1,11 @@
+[2026-11-15 12:22:10] drill-repull: command /Users/jimross/Projects/walkaway-cli/tests/drill/work-data/bin/land.sh drill-repull 2026-11-17 2026-11-17 12
+[2026-11-15 12:22:11] drill-repull: fired command: /Users/jimross/Projects/walkaway-cli/tests/drill/work-data/bin/land.sh drill-repull {from} for 2026-11-17..2026-11-17 (rows before: 2026-11-17=0)
+[2026-11-15 12:22:11] drill-nopath: command bash /Users/jimross/Projects/walkaway-cli/tests/drill/work-data/pull-drill/scripts/pull.sh
+pulled 2026-11-14
+[2026-11-15 12:22:13] drill-nopath: fired command: bash /Users/jimross/Projects/walkaway-cli/tests/drill/work-data/pull-drill/scripts/pull.sh for 2026-11-12..2026-11-12 (rows before: 2026-11-12=0)
+[2026-11-15 12:22:23] drill-nopath: command bash /Users/jimross/Projects/walkaway-cli/tests/drill/work-data/pull-drill/scripts/pull.sh
+pulled 2026-11-14
+[2026-11-15 12:22:24] drill-nopath: fired command: bash /Users/jimross/Projects/walkaway-cli/tests/drill/work-data/pull-drill/scripts/pull.sh for 2026-11-12..2026-11-12 (rows before: 2026-11-12=0)
+[2026-11-15 12:23:13] drill-nopath: command bash /Users/jimross/Projects/walkaway-cli/tests/drill/work-data/pull-drill/scripts/pull.sh --from 2026-11-12 --to 2026-11-12
+pulled 2026-11-12
+[2026-11-15 12:23:14] drill-nopath: fired command (fix hook): bash /Users/jimross/Projects/walkaway-cli/tests/drill/work-data/pull-drill/scripts/pull.sh for 2026-11-12..2026-11-12 (rows before: 2026-11-12=0)

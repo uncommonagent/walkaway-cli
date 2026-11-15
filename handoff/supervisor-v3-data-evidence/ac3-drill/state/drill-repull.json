@@ -1,0 +1,47 @@
+{
+  "series": "drill-repull",
+  "gaps": {
+    "2026-11-17": {
+      "state": "CLOSED",
+      "status": "missing",
+      "opened_at": 1795023008,
+      "rows_before": 0,
+      "rows_now": 12,
+      "failed_tries": 0,
+      "tries_today": 1,
+      "tries_day": "2026-11-18",
+      "since": 1795023139,
+      "last_try": {
+        "at": 1795023008,
+        "method": "command",
+        "label": "command: /Users/jimross/Projects/walkaway-cli/tests/drill/work-data/bin/land.sh drill-repull {from}",
+        "rc": 0
+      },
+      "verify_at": 1795024808,
+      "rows_after": 12,
+      "closed_at": 1795023139,
+      "closed_via": "command: /Users/jimross/Projects/walkaway-cli/tests/drill/work-data/bin/land.sh drill-repull {from}"
+    }
+  },
+  "ok_periods": [
+    "2026-11-04",
+    "2026-11-05",
+    "2026-11-06",
+    "2026-11-07",
+    "2026-11-08",
+    "2026-11-09",
+    "2026-11-10",
+    "2026-11-11",
+    "2026-11-12",
+    "2026-11-13",
+    "2026-11-14",
+    "2026-11-15",
+    "2026-11-16",
+    "2026-11-17"
+  ],
+  "checked_at": 1795028657,
+  "error_ticks": 0,
+  "last_action": "2026-11-17 rows 0 -> 12 (floor 10; via command: /Users/jimross/Projects/walkaway-cli/tests/drill/work-data/bin/land.sh drill-repull {from})",
+  "last_complete": "2026-11-17",
+  "full_scan_date": "2026-11-18"
+}

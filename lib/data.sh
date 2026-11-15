@@ -488,7 +488,7 @@ data_detect() {
 # <arg> <from> <to>; its exit code is the trigger's rc. WALKAWAY_DATA_GUARD_FIXTURE=<file> answers the CC-batch query.
 
 WALKAWAY_DATA_RUN_NOW_TYPES="tracking_offsite tracking_onsite bounty cc spc connect_summary"
-WALKAWAY_DATA_HTTP_TIMEOUT="${WALKAWAY_DATA_HTTP_TIMEOUT:-30}"
+WALKAWAY_DATA_HTTP_TIMEOUT="${WALKAWAY_DATA_HTTP_TIMEOUT:-60}"
 
 _drepull_log() { mkdir -p "${WALKAWAY_HOME}/logs"; echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" >> "${WALKAWAY_HOME}/logs/data-repull.log"; }
 
@@ -515,6 +515,23 @@ _amazon_guard() {
   return 0
 }
 
+# _rows_guard <config> <guard-name> -> "" when the guard's read-only query returns at least one row, else its wait
+# reason. Used for side effects of a re-pull path that must never fire a send (e.g. the ST daily ingest sends the
+# day's Pulse brief if it has not gone out yet: the ST URL trigger only fires once today's brief exists).
+_rows_guard() {
+  local cfg="$1" g rows
+  g=$(jq -c --arg n "$2" '.guards[$n] // empty' <<< "$cfg")
+  [[ -n "$g" ]] || { echo "unknown guard $2"; return 0; }
+  if [[ -n "${WALKAWAY_DATA_GUARD_FIXTURE:-}" ]]; then
+    rows=$(cat "${WALKAWAY_DATA_GUARD_FIXTURE%.json}.$2.json" 2>/dev/null || echo '[{"fixture":"default-pass"}]')
+  else
+    rows=$(_rest_get "$cfg" "$(jq -r '.source' <<< "$g")" data-guard "$2" "$(_subst "$(jq -r '.query' <<< "$g")" "$(_data_ctx "$cfg")")")
+  fi
+  if jq -e 'type == "array" and length > 0' <<< "$rows" > /dev/null 2>&1; then return 0; fi
+  if jq -e 'type == "object"' <<< "$rows" > /dev/null 2>&1; then echo "$2 check failed ($(jq -r '.__error // "error"' <<< "$rows" | cut -c1-80))"; return 0; fi
+  jq -r '.wait_reason // "guard \(.)"' <<< "$g"
+}
+
 # _method_for <config> <series-json> <age> <hook_merged> [post_fix] -> "go <idx>" | "wait <reason>" | "none"
 # A post_fix gap (its fix build merged) tries the fix's date-range hook first: the older paths already failed it.
 _method_for() {
@@ -534,10 +551,12 @@ _method_for() {
       if [[ "$now" < "$h0" ]]; then wait=${wait:-"$(jq -r .method <<< "$m") window opens $h0"}; continue; fi
       [[ "$now" < "$h1" || "$h1" == "24:00" ]] || continue
     fi
-    if [[ "$(jq -r '.guard // ""' <<< "$m")" == "amazon" ]]; then
-      g=$(_amazon_guard "$cfg")
-      if [[ -n "$g" ]]; then wait=${wait:-$g}; continue; fi
-    fi
+    case "$(jq -r '.guard // ""' <<< "$m")" in
+      "") g="" ;;
+      amazon) g=$(_amazon_guard "$cfg") ;;
+      *) g=$(_rows_guard "$cfg" "$(jq -r '.guard' <<< "$m")") ;;
+    esac
+    if [[ -n "$g" ]]; then wait=${wait:-$g}; continue; fi
     echo "go $i"; return 0
   done
   [[ -n "$wait" ]] && { echo "wait $wait"; return 0; }
@@ -577,14 +596,16 @@ _http_get() {
   base=$(jq -r '.app_url' <<< "$src"); envf=$(_expand_home "$(jq -r '.env_file' <<< "$src")")
   secret=$(_env_val "$envf" "$(jq -r '.cron_secret_var' <<< "$src")")
   [[ -n "$secret" ]] || { _drepull_log "http $path refused: no cron secret"; return 2; }
+  local crc=0
   out=$(mktemp)
   code=$(printf 'header = "Authorization: Bearer %s"\n' "$secret" |
-         curl -sS -g -m "$WALKAWAY_DATA_HTTP_TIMEOUT" -K - -o "$out" -w '%{http_code}' "$base$path" 2>/dev/null) || true
-  _drepull_log "http GET $base$path -> HTTP ${code:-none} $(head -c 300 "$out" | tr '\n' ' ')"
+         curl -sS -g -m "$WALKAWAY_DATA_HTTP_TIMEOUT" -K - -o "$out" -w '%{http_code}' "$base$path" 2>/dev/null) || crc=$?
+  _drepull_log "http GET $base$path -> HTTP ${code:-none} (curl exit $crc) $(head -c 300 "$out" | tr '\n' ' ')"
   rm -f "$out"
   [[ "$code" == 2* ]] && return 0
-  # The route keeps running server-side after our client timeout (long syncs): the verify step decides.
-  [[ "$code" == "000" ]] && return 0
+  # curl exit 28 = our client timeout: the request was delivered and the route keeps running server-side (long
+  # syncs, ~43 s cold starts): the verify step decides. Any other curl failure never reached the route: a failed try.
+  (( crc == 28 )) && return 0
   return 1
 }
 

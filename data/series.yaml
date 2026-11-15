@@ -25,7 +25,8 @@
 #                 http      GET {app_url}{path} with Bearer <cron_secret_var> (the route's own cron call)
 #                 command   a fixed local command (e.g. the ST URL trigger the login agent opens)
 #                 self_heal nothing to trigger: the series refills by itself; the try is the wait
-#               guard: amazon = business hours + no CC batch in flight + paced (guards.amazon)
+#               guard: amazon = business hours + no CC batch in flight + paced (guards.amazon); any other name =
+#               a guards.<name> read-only query that must return a row before the trigger fires (st_brief_sent)
 #               requires_fix: true = the hook a fix build adds (contract below); used only after that fix merged
 #   fix_hook    the date-range re-pull hook a fix build must add when no existing path covers a gap (the plan's
 #               "date-range run-now hooks"), stated as the exact trigger the supervisor will call after the merge
@@ -64,6 +65,13 @@ guards:
       query: "cc_optin_runs?select=session,status,cc_optin_batches(seq,status)&user_id=eq.{audrey_user}&run_date=eq.{today}"
       # in flight = a run PLANNED/RUNNING or any batch SUBMITTED (20261024000001_cc_optin.sql:9-11)
       predicate: 'any(.[]; (.status == "PLANNED" or .status == "RUNNING") or any((.cc_optin_batches // [])[]; .status == "SUBMITTED"))'
+  st_brief_sent:
+    # The ST daily ingest sends the day's Pulse brief when it lands yesterday's total and the brief has not gone
+    # out yet (throughline-app app/api/showingtime/daily-ingest/route.ts:90-95, maybeTriggerBriefOnIngest). A re-pull
+    # must never fire a send: the ST URL trigger only fires once today's brief row exists (cron 11:30-13:00 UTC).
+    source: throughline
+    query: "pulse_brief_sends?select=send_date&send_date=eq.{today}"
+    wait_reason: "today's Pulse brief not sent yet (an ST re-pull would send it)"
 
 series:
   # ── Showrunner (audrey-ops-platform) ────────────────────────────────────────
@@ -218,8 +226,8 @@ series:
     floor_basis: "structural: one is_total row per day, all 30 days"
     historical: "yes"          # FromDate/ToDate, pull-core.js:80-93
     repull:
-      - {method: command, ages: [1, 2, 3, 4, 5, 6, 7, 8], verify_after_mins: 30, command: 'open -g -a "Google Chrome" "https://throughlinepro.com/#tl-ext-run-daily"', note: "URL trigger pulls D-1..D-8 (background.js:89-99, pull-core.js:70-75)"}
-      - {method: command, requires_fix: true, ages: all, verify_after_mins: 45, command: 'open -g -a "Google Chrome" "https://throughlinepro.com/#tl-ext-repull=st&from={from}&to={to}"'}
+      - {method: command, ages: [1, 2, 3, 4, 5, 6, 7, 8], verify_after_mins: 30, guard: st_brief_sent, command: 'open -g -a "Google Chrome" "https://throughlinepro.com/#tl-ext-run-daily"', note: "URL trigger pulls D-1..D-8 (background.js:89-99, pull-core.js:70-75)"}
+      - {method: command, requires_fix: true, ages: all, verify_after_mins: 45, guard: st_brief_sent, command: 'open -g -a "Google Chrome" "https://throughlinepro.com/#tl-ext-repull=st&from={from}&to={to}"'}
     fix_hook: "Throughline extension URL trigger: https://throughlinepro.com/#tl-ext-repull=st&from=YYYY-MM-DD&to=YYYY-MM-DD runs the daily pull (runJob mode daily) for exactly those dates, then closes the tab"
 
   - name: bb-showings-daily
@@ -237,8 +245,8 @@ series:
     floor_basis: "50% of 30-day median 21 (range 19..21)"
     historical: "yes"          # START_BB_BACKFILL up to 90 days (bb-core.js:955-993)
     repull:
-      - {method: command, ages: [1], verify_after_mins: 45, command: 'open -g -a "Google Chrome" "https://throughlinepro.com/#tl-ext-run-daily"', note: "the ST URL trigger sets setBbPending(true) (background.js:95): BB pulls yesterday after ST"}
-      - {method: command, requires_fix: true, ages: all, verify_after_mins: 45, command: 'open -g -a "Google Chrome" "https://throughlinepro.com/#tl-ext-repull=bb&from={from}&to={to}"'}
+      - {method: command, ages: [1], verify_after_mins: 45, guard: st_brief_sent, command: 'open -g -a "Google Chrome" "https://throughlinepro.com/#tl-ext-run-daily"', note: "the ST URL trigger sets setBbPending(true) (background.js:95): BB pulls yesterday after ST"}
+      - {method: command, requires_fix: true, ages: all, verify_after_mins: 45, guard: st_brief_sent, command: 'open -g -a "Google Chrome" "https://throughlinepro.com/#tl-ext-repull=bb&from={from}&to={to}"'}
     fix_hook: "Throughline extension URL trigger: https://throughlinepro.com/#tl-ext-repull=bb&from=YYYY-MM-DD&to=YYYY-MM-DD runs START_BB for each date (pullTableauDaily date, ET dates), then closes the tab"
 
   - name: st-showings-forward
@@ -256,7 +264,7 @@ series:
     floor_basis: "structural: all 27 days = 4 (horizons 0..3)"
     historical: "no"           # as-of snapshot of the forward book: a missed day cannot be rebuilt
     repull:
-      - {method: command, ages: [0], verify_after_mins: 45, command: 'open -g -a "Google Chrome" "https://throughlinepro.com/#tl-ext-run-daily"', note: "today only: the forward pull runs right after a successful ST daily"}
+      - {method: command, ages: [0], verify_after_mins: 45, guard: st_brief_sent, command: 'open -g -a "Google Chrome" "https://throughlinepro.com/#tl-ext-run-daily"', note: "today only: the forward pull runs right after a successful ST daily"}
 
   - name: pulse-daily-snapshots
     title: Pulse daily snapshots (Vercel cron pulse-daily-sync + ifMissing)
@@ -394,7 +402,7 @@ series:
     floor_basis: "structural: one row per week, all 8 weeks"
     historical: "yes"          # rebuilt when a daily ingest of that week lands
     repull:
-      - {method: command, ages: [1], verify_after_mins: 45, command: 'open -g -a "Google Chrome" "https://throughlinepro.com/#tl-ext-run-daily"', note: "the daily ingest of D-1..D-8 rolls up last week (daily-ingest/route.ts:89-110)"}
+      - {method: command, ages: [1], verify_after_mins: 45, guard: st_brief_sent, command: 'open -g -a "Google Chrome" "https://throughlinepro.com/#tl-ext-run-daily"', note: "the daily ingest of D-1..D-8 rolls up last week (daily-ingest/route.ts:89-110)"}
 
   - name: recap-reports
     title: ShowingTime recap report PDFs (extension, Mondays)

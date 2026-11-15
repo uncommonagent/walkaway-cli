@@ -171,6 +171,7 @@ Incident evidence JSON (series entry, gap state, fresh counts, re-pull log): $ws
 Source can re-pull past periods: $hist
 Date-range hook contract (the fix to build when no path exists; the supervisor calls it after the merge): $(jq -r '.fix_hook // "none"' <<< "$s")
 Protocol: $WALKAWAY_PROTOCOL_PATH
+If you decide fix, the build's feature name is fix-data-${name}-${d//-/}: every acceptance criterion's evidence file goes under handoff/fix-data-${name}-${d//-/}-evidence/.
 
 Diagnose why these periods have no rows and whether the hook (plus any cause you find) fixes it. Decide fix (fill every fix field) or escalate (one question)."
     dec=$(_jask "$repo" "$ws" "$task")
@@ -211,7 +212,7 @@ Diagnose why these periods have no rows and whether the hook (plus any cause you
     return 0
   fi
   # shellcheck disable=SC2046
-  data_gap_transition "$name" FIXING "$dates: cause: $(jq -r '.cause | split(". ")[0] | .[0:150]' <<< "$dec"); $outcome" $(jq -r '.[]' <<< "$gaps")
+  data_gap_transition "$name" FIXING "$dates: cause: $(jq -r '.cause | split(". ")[0] | if length > 150 then (.[0:150] | sub(" [^ ]*$"; "") + "...") else . end' <<< "$dec"); $outcome" $(jq -r '.[]' <<< "$gaps")
 }
 
 # do_progress <series>: a FIXING series' fix build; MERGED -> its gaps go back to OPEN with the hook enabled.
