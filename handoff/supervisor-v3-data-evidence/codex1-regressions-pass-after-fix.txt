@@ -1,0 +1,105 @@
+# tests/test-data-repull.sh after the Codex cycle 1 fix (working tree, 2026-11-15 12:59 EST)
+R1 grouped re-pull fires once (from..to), REPULLING is silent, rows land -> CLOSED with before/after
+  ok   one trigger for both gaps, 11-15..11-16
+  ok   gaps REPULLING with verify_at = +30 min
+  ok   REPULLING sends no ntfy (only the OPEN line)
+  ok   rows landed -> CLOSED via the command
+  ok   one CLOSED ntfy: rows 0 -> 12
+  ok   no second trigger
+R2 re-pull never lands: verify fails twice -> handed to the operator (cap 2), no third trigger
+  ok   inside verify window: still REPULLING, no new trigger
+  ok   verify failed -> try 2 fired
+  ok   second failure -> need_operator, reason names the method
+  ok   no third trigger after the cap
+R3 trigger failure (rc != 0) counts as a failed try
+  ok   OPEN, failed_tries 1, last_try rc 1
+  ok   second failed trigger -> 2 tries
+  ok   -> need_operator
+R4 Amazon guard: business hours, CC batch in flight, pacing; a deferral is not a try
+  ok   19:30: outside 09:00-19:00 -> no trigger, waiting
+  ok   CC batch RUNNING -> no trigger, waiting on CC batch
+  ok   batch DONE -> run-now fires (tracking_offsite, age 1)
+  ok   pace stamp written
+  ok   amz-tracking-onsite 8 min later: paced, no trigger
+  ok   16 min later: fires run-now tracking_onsite
+R5 hours windows (real cc entry): run-now pulls D-2 only before noon; after noon age 2 has no path
+  ok   11:30: run-now cc fires for 11-16 (age 2)
+  ok   12:30: no method for age 2 -> need_operator, no trigger
+R6 self-heal: nothing fires, the wait is the try
+  ok   11-15 (age 3) REPULLING via self-heal, verify +180 min
+  ok   extension healed it -> CLOSED via self-heal wait
+R7 no path / lost data: age beyond every method, historical=no
+  ok   age 10 (methods cover 1-3) -> need_operator, no trigger
+  ok   historical=no -> reason says the source cannot re-pull
+R8 requires_fix hook: unused before the fix merged, used after (dates substituted)
+  ok   before the fix: no path (ages 9-10)
+  ok   after the fix merged: the hook fires once for 11-08..11-09
+R9 run-now allow-list (direct, no network)
+  ok   a non-allow-listed report type is refused before any request
+R10 a post_fix gap tries the fix hook before the older path (which already failed it)
+  ok   age 2 (self-heal covers it) but post_fix -> the fix hook fires
+R11 http trigger (Phase 6 live finding): a route that never answers in time = delivered; no connection = failed try
+  ok   slow route past the client timeout (curl exit 28) -> rc 0 (delivered; verify decides)
+  ok   connection refused (HTTP 000, curl exit 7) -> rc 1 (a failed try, not a fired re-pull)
+R12 a re-pull never fires a send: the ST URL trigger waits until today's Pulse brief row exists (real bb entry)
+  ok   brief not sent yet -> no trigger, waiting with the reason
+  ok   brief sent -> the ST URL trigger fires for 11-17 (age 1)
+R13 (a) series.yaml contract: every re-pullable watched series has a fix_hook AND a matching executable requires_fix method with {from}/{to}
+  ok   0 contract violations
+  ok   the 10 series named by Codex cycle 1 each have a requires_fix method
+  ok   pulse-signal-scores / pulse-market-health hooks never use ?scope=full
+R14 (b) pulse-weekly-stats week gap, hook merged: the hook gets from = Monday, to = Sunday
+  ok   fired once for week 202645: 2026-11-02..2026-11-08
+  ok   resolved path /api/cron/pulse-daily-sync?from=2026-11-02&to=2026-11-08
+  ok   gap REPULLING via the fix hook
+R15 (c) meta-daily-metrics fix hook: the http path gets the substituted dates (stub, then a local server)
+  ok   age 10 (meta-sync covers 1-3) -> the fix hook fires with 11-08..11-08
+  ok   the route received GET /api/cron/meta-sync?from=2026-11-08&to=2026-11-09 (rc 0)
+  ok   a non-ISO date is refused before any request (rc 2, one request total)
+R16 (d) P2: a count error at verify time burns no try; the next good count below the floor fails exactly one
+  ok   errored count at verify_at: failed_tries 0, still REPULLING, no new trigger
+  ok   next good count (0 < floor 10): exactly one failed try, try 2 fired
+R17 (e) a requires_fix method NEVER fires while hook_merged is false (every real series with one); fires once merged
+  ok   amz-tracking-offsite: hook not merged -> the fix hook is not called
+  ok   amz-tracking-offsite: no other path for 2026-11-04 -> handed to the data operator, nothing fired
+  ok   amz-tracking-offsite: hook merged -> the fix hook fires once for 2026-11-04
+  ok   amz-tracking-onsite: hook not merged -> the fix hook is not called
+  ok   amz-tracking-onsite: no other path for 2026-11-04 -> handed to the data operator, nothing fired
+  ok   amz-tracking-onsite: hook merged -> the fix hook fires once for 2026-11-04
+  ok   amz-creator-connections: hook not merged -> the fix hook is not called
+  ok   amz-creator-connections: no other path for 2026-11-04 -> handed to the data operator, nothing fired
+  ok   amz-creator-connections: hook merged -> the fix hook fires once for 2026-11-04
+  ok   amz-sponsored-products: hook not merged -> the fix hook is not called
+  ok   amz-sponsored-products: no other path for 2026-11-04 -> handed to the data operator, nothing fired
+  ok   amz-sponsored-products: hook merged -> the fix hook fires once for 2026-11-04
+  ok   amz-connect-summary: hook not merged -> the fix hook is not called
+  ok   markable-spend: hook not merged -> the fix hook is not called
+  ok   markable-spend: no other path for 2026-11-04 -> handed to the data operator, nothing fired
+  ok   markable-spend: hook merged -> the fix hook fires once for 2026-11-04
+  ok   meta-daily-metrics: hook not merged -> the fix hook is not called
+  ok   meta-daily-metrics: no other path for 2026-11-04 -> handed to the data operator, nothing fired
+  ok   meta-daily-metrics: hook merged -> the fix hook fires once for 2026-11-04
+  ok   st-showings-daily: hook not merged -> the fix hook is not called
+  ok   st-showings-daily: no other path for 2026-11-04 -> handed to the data operator, nothing fired
+  ok   st-showings-daily: hook merged -> the fix hook fires once for 2026-11-04
+  ok   bb-showings-daily: hook not merged -> the fix hook is not called
+  ok   bb-showings-daily: no other path for 2026-11-04 -> handed to the data operator, nothing fired
+  ok   bb-showings-daily: hook merged -> the fix hook fires once for 2026-11-04
+  ok   pulse-daily-snapshots: hook not merged -> the fix hook is not called
+  ok   pulse-daily-snapshots: no other path for 2026-11-04 -> handed to the data operator, nothing fired
+  ok   pulse-daily-snapshots: hook merged -> the fix hook fires once for 2026-11-04
+  ok   pulse-weekly-stats: hook not merged -> the fix hook is not called
+  ok   pulse-weekly-stats: no other path for 2026-10-19 -> handed to the data operator, nothing fired
+  ok   pulse-weekly-stats: hook merged -> the fix hook fires once for 2026-10-19
+  ok   pulse-signal-scores: hook not merged -> the fix hook is not called
+  ok   pulse-market-health: hook not merged -> the fix hook is not called
+  ok   tma-cohort-showings: hook not merged -> the fix hook is not called
+  ok   pulse-showings-weekly: hook not merged -> the fix hook is not called
+  ok   pulse-showings-weekly: no other path for 2026-10-19 -> handed to the data operator, nothing fired
+  ok   pulse-showings-weekly: hook merged -> the fix hook fires once for 2026-10-19
+  ok   recap-reports: hook not merged -> the fix hook is not called
+  ok   recap-reports: no other path for 2026-10-19 -> handed to the data operator, nothing fired
+  ok   recap-reports: hook merged -> the fix hook fires once for 2026-10-19
+  ok   R17 covered all 16 re-pullable watched series
+
+Results: 85 passed, 0 failed

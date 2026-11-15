@@ -179,6 +179,111 @@ echo '[{"send_date":"2026-11-18"}]' > "$S/guard.st_brief_sent.json"
 at "2026-11-18 13:07"; ev bb-showings-daily
 check "brief sent -> the ST URL trigger fires for 11-17 (age 1)" '[[ "$(trig_n bb-showings-daily)" == 1 ]] && grep -q "^bb-showings-daily command open -g -a \"Google Chrome\" \"https://throughlinepro.com/#tl-ext-run-daily\" 2026-11-17 2026-11-17$" "$S/triggers.log"'
 
+# R13-R17: Codex cycle 1 regressions (P1 executable fix hooks with full date ranges, P2 verify needs a good count).
+# Real series.yaml entries run with stubbed triggers and a stubbed data operator: nothing live is called.
+
+# all_ok <series> <gap-key>: fixture with every day 2026-09-01..2026-11-30 (so every daily period and Monday
+# anchor) at the series' floor, and <gap-key> = 0
+all_ok() {
+  python3 - "$S/fx/$1.json" "$(jq -r --arg n "$1" '.series[] | select(.name == $n) | .floor' <<< "$CFG_REAL")" "$2" <<'PY'
+import json, sys, datetime
+p, f, g = sys.argv[1], int(sys.argv[2]), sys.argv[3]
+x = datetime.date(2026, 9, 1); d = {}
+while x <= datetime.date(2026, 11, 30):
+    d[x.isoformat()] = f; x += datetime.timedelta(days=1)
+d[g] = 0
+json.dump(d, open(p, "w"))
+PY
+}
+seed() { mkdir -p "$S/data/state"; jq -n --arg s "$1" --argjson m "$2" '{series: $s, gaps: {}, ok_periods: [], hook_merged: $m}' > "$S/data/state/$1.json"; }
+CFG_REAL=$(WALKAWAY_DATA_FILE="$ROOT/data/series.yaml" bash -c "source '$ROOT/lib/data.sh'; data_config")
+
+echo "R13 (a) series.yaml contract: every re-pullable watched series has a fix_hook AND a matching executable requires_fix method with {from}/{to}"
+viol=$(jq -r '.series[] | select(.watch == true) | . as $s
+  | [(.repull // [])[] | select(.requires_fix == true)] as $fx
+  | if (.historical == "no") then
+      (if (.fix_hook // "") != "" or ($fx | length) > 0 then "\(.name): lost-data series must keep no hook" else empty end)
+    else
+      (if (.fix_hook // "") == "" then "\(.name): no fix_hook" else empty end),
+      (if ($fx | length) == 0 then "\(.name): no requires_fix method" else empty end),
+      ($fx[] | (.command // .path // "") as $t
+        | (if ($t | contains("{from}") and contains("{to}")) | not then "\($s.name): requires_fix trigger lacks {from}/{to}: \($t)" else empty end),
+          (if .ages != "all" then "\($s.name): requires_fix method must cover ages all" else empty end),
+          (if .method == "http" then ($t | split("?")[0]) else ($t | capture("(?<k>#(sr|tl)-ext-repull=[a-z_]+)").k // "") end) as $k
+          | if $k == "" or (($s.fix_hook // "") | contains($k) | not) then "\($s.name): requires_fix trigger \($k) not in its fix_hook" else empty end)
+    end' <<< "$CFG_REAL")
+check "0 contract violations${viol:+: $viol}" '[[ -z "$viol" ]]'
+check "the 10 series named by Codex cycle 1 each have a requires_fix method" '[[ "$(jq -r "[.series[] | select(.name | IN(\"amz-connect-summary\",\"markable-spend\",\"meta-daily-metrics\",\"pulse-daily-snapshots\",\"pulse-weekly-stats\",\"pulse-signal-scores\",\"pulse-market-health\",\"tma-cohort-showings\",\"recap-reports\",\"pulse-showings-weekly\")) | select([(.repull // [])[] | select(.requires_fix)] | length > 0)] | length" <<< "$CFG_REAL")" == 10 ]]'
+check "pulse-signal-scores / pulse-market-health hooks never use ?scope=full" '! jq -r ".series[] | (.repull // [])[] | .path // empty" <<< "$CFG_REAL" | grep -q "scope=full"'
+
+echo "R14 (b) pulse-weekly-stats week gap, hook merged: the hook gets from = Monday, to = Sunday"
+fresh "$ROOT/data/series.yaml"; at "2026-11-18 13:00"
+all_ok pulse-weekly-stats 2026-11-02; seed pulse-weekly-stats true
+ev pulse-weekly-stats
+check "fired once for week 202645: 2026-11-02..2026-11-08" '[[ "$(trig_n pulse-weekly-stats)" == 1 ]] && grep -q " 2026-11-02 2026-11-08$" "$S/triggers.log"'
+check "resolved path /api/cron/pulse-daily-sync?from=2026-11-02&to=2026-11-08" 'grep -qxF "pulse-weekly-stats http /api/cron/pulse-daily-sync?from=2026-11-02&to=2026-11-08" "$S/triggers-resolved.log"'
+check "gap REPULLING via the fix hook" '[[ "$(gst pulse-weekly-stats 2026-11-02 state)" == REPULLING ]]'
+
+echo "R15 (c) meta-daily-metrics fix hook: the http path gets the substituted dates (stub, then a local server)"
+fresh "$ROOT/data/series.yaml"; at "2026-11-18 13:00"
+all_ok meta-daily-metrics 2026-11-08; seed meta-daily-metrics true
+ev meta-daily-metrics
+check "age 10 (meta-sync covers 1-3) -> the fix hook fires with 11-08..11-08" 'grep -qxF "meta-daily-metrics http /api/cron/meta-sync?from=2026-11-08&to=2026-11-08" "$S/triggers-resolved.log"'
+fresh "$ROOT/data/series.yaml"; unset WALKAWAY_DATA_TRIGGER_CMD
+printf 'CRON_SECRET=test-cron-secret\n' > "$S/env"
+PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')
+python3 - "$PORT" "$S/paths.log" > /dev/null 2>&1 <<'PY' &
+import http.server, sys
+class H(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        open(sys.argv[2], "a").write(self.path + "\n")
+        self.send_response(200); self.end_headers(); self.wfile.write(b"{}")
+    def log_message(self, *a): pass
+http.server.HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
+PY
+SRV=$!
+sleep 1
+CFG_LOCAL=$(jq -c --arg env "$S/env" --arg url "http://127.0.0.1:$PORT" '.sources.audrey += {env_file: $env, app_url: $url}' <<< "$CFG_REAL")
+IDX=$(jq -r '.series[] | select(.name == "meta-daily-metrics") | .repull | to_entries[] | select(.value.requires_fix) | .key' <<< "$CFG_REAL")
+# the config travels in the environment (its notes hold quotes)
+fire_direct() { CFG_LOCAL="$CFG_LOCAL" IDX="$IDX" F="$1" T="$2" bash -c 'source "$0/lib/data.sh"; s=$(data_get "$CFG_LOCAL" meta-daily-metrics); _fire "$CFG_LOCAL" "$s" "$IDX" "$F" "$T"; echo rc=$?' "$ROOT"; }
+fired=$(fire_direct 2026-11-08 2026-11-09)
+bogus=$(fire_direct '2026-11-08&scope=full' 2026-11-09)
+kill "$SRV" 2>/dev/null; wait "$SRV" 2>/dev/null
+check "the route received GET /api/cron/meta-sync?from=2026-11-08&to=2026-11-09 (rc 0)" '[[ "$fired" == *"rc=0"* ]] && grep -qxF "/api/cron/meta-sync?from=2026-11-08&to=2026-11-09" "$S/paths.log"'
+check "a non-ISO date is refused before any request (rc 2, one request total)" '[[ "$bogus" == *"rc=2"* && "$(wc -l < "$S/paths.log" | tr -d " ")" == 1 ]]'
+
+echo "R16 (d) P2: a count error at verify time burns no try; the next good count below the floor fails exactly one"
+fresh; at "2026-11-18 13:00"
+fill scratch-daily 2026-11-01 2026-11-17 12; fill scratch-daily 2026-11-16 2026-11-16 0
+ev scratch-daily
+cp "$S/fx/scratch-daily.json" "$S/fx-good.json"; echo '{"__error": "HTTP 503 (fixture outage)"}' > "$S/fx/scratch-daily.json"
+at "2026-11-18 13:31"; ev scratch-daily
+check "errored count at verify_at: failed_tries 0, still REPULLING, no new trigger" '[[ "$(gst scratch-daily 2026-11-16 failed_tries)" == 0 && "$(gst scratch-daily 2026-11-16 state)" == REPULLING && "$(trig_n scratch-daily)" == 1 ]]'
+cp "$S/fx-good.json" "$S/fx/scratch-daily.json"
+at "2026-11-18 13:33"; ev scratch-daily
+check "next good count (0 < floor 10): exactly one failed try, try 2 fired" '[[ "$(gst scratch-daily 2026-11-16 failed_tries)" == 1 && "$(trig_n scratch-daily)" == 2 && "$(gst scratch-daily 2026-11-16 state)" == REPULLING ]]'
+
+echo "R17 (e) a requires_fix method NEVER fires while hook_merged is false (every real series with one); fires once merged"
+R17_N=0
+while IFS=$'\t' read -r name cad tmpl; do
+  fresh "$ROOT/data/series.yaml"; at "2026-11-18 13:30"
+  # the oldest ready lookback period: the age least covered by the existing paths
+  [[ "$cad" == weekly ]] && gap=2026-10-19 || gap=2026-11-04
+  all_ok "$name" "$gap"; seed "$name" false
+  ev "$name"
+  check "$name: hook not merged -> the fix hook is not called" '! grep -qsF -- "$tmpl" "$S/triggers.log"'
+  R17_N=$((R17_N + 1))
+  if [[ "$(gst "$name" "$gap" need_operator)" == true ]]; then
+    check "$name: no other path for $gap -> handed to the data operator, nothing fired" '[[ "$(trig_n "$name")" == 0 && "$(gst "$name" "$gap" reason)" == "no re-pull path for age "* ]]'
+    jq '.hook_merged = true | del(.operator_gaps) | .gaps |= map_values(del(.need_operator) | .failed_tries = 0)' "$S/data/state/$name.json" > "$S/t" && mv "$S/t" "$S/data/state/$name.json"
+    at "2026-11-18 13:50"; ev "$name"
+    check "$name: hook merged -> the fix hook fires once for $gap" '[[ "$(grep -cF -- "$tmpl" "$S/triggers.log")" == 1 ]]'
+  fi
+done < <(jq -r '.series[] | select(.watch == true) | . as $s | (.repull // [])[] | select(.requires_fix == true)
+          | [$s.name, $s.cadence, (.command // .path)] | @tsv' <<< "$CFG_REAL")
+check "R17 covered all 16 re-pullable watched series" '[[ "$R17_N" == 16 ]]'
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 (( FAIL == 0 ))

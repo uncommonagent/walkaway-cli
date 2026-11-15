@@ -134,6 +134,15 @@ _age_of() {
   esac
 }
 
+# _period_end <cadence> <anchor> -> the last day of the period (daily: the day; weekly: Sunday; monthly: last day)
+_period_end() {
+  case "$1" in
+    weekly)  _day_shift "$2" +6 ;;
+    monthly) _day_shift "$(_anchor_back monthly "$2" -1)" -1 ;;
+    *)       echo "$2" ;;
+  esac
+}
+
 # ── read-only counts ─────────────────────────────────────────────────────────
 
 # _data_ctx <config> -> placeholder JSON (vars + today)
@@ -319,7 +328,8 @@ data_floors() {
 # One state file per series: $WALKAWAY_HOME/data/state/<series>.json
 #   {series, gaps: {<period>: GAP}, ok_periods: [...], full_scan_date, last_complete, last_action, checked_at,
 #    error_ticks, fix_feature, fix_plan, fix_date, fix_merged, operator_pid, operator_spawned, incident}
-# GAP = {state, status (missing|short), opened_at, rows_before, rows_now, failed_tries, tries_today, tries_day,
+# GAP = {state, status (missing|short), opened_at, rows_before, rows_now, counted_at (last successful count),
+#        failed_tries, tries_today, tries_day,
 #        last_try {at, method, label, rc}, verify_at, need_operator, reason, closed_at, rows_after, closed_via}
 # Gap states (per period):
 #   OPEN       rows missing/under the floor past the period's ready_by (the series' own retries are done)   ntfy (grouped)
@@ -423,18 +433,20 @@ data_detect() {
     [[ -n "$p" ]] || continue
     gst=$(jq -r --arg p "$p" '.gaps[$p].state // ""' <<< "$st")
     if (( c >= floor )); then
-      dstate_update "$name" '.ok_periods = ((.ok_periods // []) + [$p] | unique) | if .gaps[$p] then .gaps[$p].rows_now = ($c|tonumber) else . end' --arg p "$p" --arg c "$c"
+      dstate_update "$name" '.ok_periods = ((.ok_periods // []) + [$p] | unique) | if .gaps[$p] then .gaps[$p].rows_now = ($c|tonumber) | .gaps[$p].counted_at = ($n|tonumber) else . end' \
+        --arg p "$p" --arg c "$c" --arg n "$(_data_now)"
       if [[ -n "$gst" && "$gst" != "CLOSED" ]]; then
         dstate_update "$name" '.gaps[$p] += {rows_after: ($c|tonumber), closed_at: ($n|tonumber), closed_via: (.gaps[$p].last_try.label // "rows landed (no re-pull by the supervisor)")}' \
           --arg p "$p" --arg c "$c" --arg n "$(_data_now)"
         closed+=("$p")
       fi
     else
-      dstate_update "$name" '.ok_periods = ((.ok_periods // []) - [$p]) | if .gaps[$p] then .gaps[$p].rows_now = ($c|tonumber) | .gaps[$p].status = $w else . end' \
-        --arg p "$p" --arg c "$c" --arg w "$( (( c > 0 )) && echo short || echo missing)"
+      dstate_update "$name" '.ok_periods = ((.ok_periods // []) - [$p])
+          | if .gaps[$p] then .gaps[$p].rows_now = ($c|tonumber) | .gaps[$p].status = $w | .gaps[$p].counted_at = ($n|tonumber) else . end' \
+        --arg p "$p" --arg c "$c" --arg w "$( (( c > 0 )) && echo short || echo missing)" --arg n "$(_data_now)"
       if [[ -z "$gst" || "$gst" == "CLOSED" ]]; then
         dstate_update "$name" '.gaps[$p] = {state: "NEW", status: $w, opened_at: ($n|tonumber), rows_before: ($c|tonumber), rows_now: ($c|tonumber),
-            failed_tries: 0, tries_today: 0, tries_day: $d}' \
+            counted_at: ($n|tonumber), failed_tries: 0, tries_today: 0, tries_day: $d}' \
           --arg p "$p" --arg c "$c" --arg w "$( (( c > 0 )) && echo short || echo missing)" --arg n "$(_data_now)" --arg d "$today"
         opened+=("$p")
       fi
@@ -482,12 +494,15 @@ data_detect() {
 # Triggers (the series' own pull paths only):
 #   run_now   PATCH extension_report_state SET run_now_requested_at = now WHERE user_id = <audrey_user> AND
 #             report_type = <one allow-listed base type>: exactly what the Showrunner run-now route writes
-#   http      GET <app_url><path> with Authorization: Bearer <cron secret>, read from the env file at call time and
-#             handed to curl on stdin (never argv/logs)
+#   http      GET <app_url><path> ({from}/{to} substituted) with Authorization: Bearer <cron secret>, read from
+#             the env file at call time and handed to curl on stdin (never argv/logs)
 #   command   the series' fixed local command ({from}/{to} substituted; ISO dates only)
 #   self_heal nothing fires: the series refills itself; the try is the wait until verify_at
+# from/to are the first and last DAY of the fired gaps (a weekly gap ends on its Sunday, a monthly one on the
+# month's last day); {from}/{to} in a command or http path are replaced by them (ISO dates only).
 # Test seam: WALKAWAY_DATA_TRIGGER_CMD=<script> replaces every trigger: called as <script> <series> <method>
-# <arg> <from> <to>; its exit code is the trigger's rc. WALKAWAY_DATA_GUARD_FIXTURE=<file> answers the CC-batch query.
+# <arg> <from> <to> (arg = the yaml template) with WALKAWAY_DATA_TRIGGER_RESOLVED = the command/path that would be
+# called (dates substituted); its exit code is the trigger's rc. WALKAWAY_DATA_GUARD_FIXTURE=<file> answers the CC-batch query.
 
 WALKAWAY_DATA_RUN_NOW_TYPES="tracking_offsite tracking_onsite bounty cc spc connect_summary"
 WALKAWAY_DATA_HTTP_TIMEOUT="${WALKAWAY_DATA_HTTP_TIMEOUT:-60}"
@@ -616,17 +631,19 @@ _fire() {
   local cfg="$1" s="$2" i="$3" from="$4" to="$5" m method arg name cmd rc=0
   m=$(jq -c --argjson i "$i" '.repull[$i]' <<< "$s"); method=$(jq -r .method <<< "$m"); name=$(jq -r .name <<< "$s")
   arg=$(jq -r '.report_type // .path // .command // ""' <<< "$m")
+  # Dates are checked before they go anywhere near a command line or URL.
   [[ "$from" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ && "$to" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || return 2
+  cmd=$arg
+  [[ "$method" == http || "$method" == command ]] && { cmd=${arg//\{from\}/$from}; cmd=${cmd//\{to\}/$to}; }
   mkdir -p "${WALKAWAY_HOME}/logs"
   if [[ -n "${WALKAWAY_DATA_TRIGGER_CMD:-}" ]]; then
-    "$WALKAWAY_DATA_TRIGGER_CMD" "$name" "$method" "$arg" "$from" "$to" >> "${WALKAWAY_HOME}/logs/data-repull.log" 2>&1 || rc=$?
-    _drepull_log "$name: stub $method $arg $from..$to rc=$rc"
+    WALKAWAY_DATA_TRIGGER_RESOLVED="$cmd" "$WALKAWAY_DATA_TRIGGER_CMD" "$name" "$method" "$arg" "$from" "$to" >> "${WALKAWAY_HOME}/logs/data-repull.log" 2>&1 || rc=$?
+    _drepull_log "$name: stub $method $cmd $from..$to rc=$rc"
   else
     case "$method" in
       run_now)   _run_now "$cfg" "$s" "$arg" || rc=$? ;;
-      http)      _http_get "$cfg" "$s" "$arg" || rc=$? ;;
+      http)      _http_get "$cfg" "$s" "$cmd" || rc=$? ;;
       command)
-        cmd=${arg//\{from\}/$from}; cmd=${cmd//\{to\}/$to}
         _drepull_log "$name: command $cmd"
         bash -c "$cmd" >> "${WALKAWAY_HOME}/logs/data-repull.log" 2>&1 & local p=$! w=0
         while kill -0 "$p" 2>/dev/null && (( w < 30 )); do sleep 1; w=$((w + 1)); done
@@ -656,9 +673,15 @@ data_act() {
   fixed=$(dstate_get "$name" .hook_merged); fixed=${fixed:-false}
 
   # 1. Verify: a REPULLING gap past verify_at whose rows did not land (detect ran first this tick) = a failed try.
-  local p failed=()
+  #    Only a successful count at/after verify_at judges it (counted_at, set by data_detect): when this tick's count
+  #    errored the verify waits for the next good count instead of burning a try.
+  local p failed=() unjudged
   while IFS= read -r p; do [[ -n "$p" ]] && failed+=("$p"); done < <(jq -r --argjson n "$now" '
-      .gaps | to_entries[] | select(.value.state == "REPULLING" and (.value.verify_at // 0) <= $n) | .key' "$(_dstate_file "$name")")
+      .gaps | to_entries[] | select(.value.state == "REPULLING" and (.value.verify_at // 0) <= $n
+        and (.value.counted_at // 0) >= (.value.verify_at // 0)) | .key' "$(_dstate_file "$name")")
+  unjudged=$(jq -r --argjson n "$now" '[.gaps | to_entries[] | select(.value.state == "REPULLING" and (.value.verify_at // 0) <= $n
+        and (.value.counted_at // 0) < (.value.verify_at // 0)) | .key] | join(" ")' "$(_dstate_file "$name")")
+  [[ -n "$unjudged" ]] && _dlog "$name: verify of $unjudged waits for a successful count"
   if (( ${#failed[@]} > 0 )); then
     dstate_update "$name" 'reduce $ps[] as $p (.; .gaps[$p].failed_tries += 1 | .gaps[$p].state = "OPEN" | .gaps[$p].since = ($n|tonumber))
         | .last_action = $a' --argjson ps "$(printf '%s\n' "${failed[@]}" | jq -R . | jq -sc .)" --arg n "$now" \
@@ -700,7 +723,7 @@ data_act() {
   while IFS= read -r idx; do
     [[ -n "$idx" ]] || continue
     ps=$(printf '%s\n' "${groups[@]}" | awk -F'\t' -v i="$idx" '$1 == i {print $2}' | sort)
-    from=$(head -1 <<< "$ps"); to=$(tail -1 <<< "$ps")
+    from=$(head -1 <<< "$ps"); to=$(_period_end "$(jq -r '.cadence // "daily"' <<< "$s")" "$(tail -1 <<< "$ps")")
     m=$(jq -c --argjson i "$idx" '.repull[$i]' <<< "$s"); label=$(_method_label "$m")
     rc=0; _fire "$cfg" "$s" "$idx" "$from" "$to" || rc=$?
     local pj va

@@ -27,7 +27,9 @@
 #                 self_heal nothing to trigger: the series refills by itself; the try is the wait
 #               guard: amazon = business hours + no CC batch in flight + paced (guards.amazon); any other name =
 #               a guards.<name> read-only query that must return a row before the trigger fires (st_brief_sent)
-#               requires_fix: true = the hook a fix build adds (contract below); used only after that fix merged
+#               requires_fix: true = the hook a fix build adds (contract below); used only after that fix merged.
+#               {from}/{to} (command or http path) = the first and last DAY of the gap range: a weekly gap is
+#               Monday..Sunday, a monthly gap the 1st..the last day
 #   fix_hook    the date-range re-pull hook a fix build must add when no existing path covers a gap (the plan's
 #               "date-range run-now hooks"), stated as the exact trigger the supervisor will call after the merge
 
@@ -93,7 +95,7 @@ series:
       - {method: run_now, report_type: tracking_offsite, ages: [1], guard: amazon, verify_after_mins: 30}
       - {method: self_heal, ages: [2, 3, 4, 5, 6, 7, 8], verify_after_mins: 180, note: "extension self-heal: /api/ingest/amazon/missing (today-8..today-2) + heal-lib.js, every poll tick"}
       - {method: command, requires_fix: true, ages: all, guard: amazon, verify_after_mins: 60, command: 'open -g -a "Google Chrome" "https://audrey-ops-platform.vercel.app/#sr-ext-repull=tracking_offsite&from={from}&to={to}"'}
-    fix_hook: "Showrunner extension URL trigger: a tab opened on https://audrey-ops-platform.vercel.app/#sr-ext-repull=<report_type>&from=YYYY-MM-DD&to=YYYY-MM-DD pulls exactly those dates through the existing heal path (runReport customDate), respecting runDuePassesLock and the CC opt-in session, then closes itself"
+    fix_hook: "Showrunner extension URL trigger: a tab opened on https://audrey-ops-platform.vercel.app/#sr-ext-repull=tracking_offsite&from=YYYY-MM-DD&to=YYYY-MM-DD (generally #sr-ext-repull=<report_type>&...) pulls exactly those dates through the existing heal path (runReport customDate), respecting runDuePassesLock and the CC opt-in session, then closes itself"
 
   - name: amz-tracking-onsite
     title: Amazon tracking report, onsite store (tracking_onsite)
@@ -172,7 +174,8 @@ series:
     historical: "yes"
     repull:
       - {method: self_heal, ages: all, verify_after_mins: 720, note: "every morning/evening run re-pulls the last 35 days (background.js:572, connect-runner.js:280-289)"}
-    fix_hook: "Showrunner extension URL trigger #sr-ext-repull=connect_summary&from=..&to=.."
+      - {method: command, requires_fix: true, ages: all, guard: amazon, verify_after_mins: 60, command: 'open -g -a "Google Chrome" "https://audrey-ops-platform.vercel.app/#sr-ext-repull=connect_summary&from={from}&to={to}"'}
+    fix_hook: "Showrunner extension URL trigger #sr-ext-repull=connect_summary&from=YYYY-MM-DD&to=YYYY-MM-DD (as amz-tracking-offsite)"
 
   - name: markable-spend
     title: Markable daily spend (07:00 + 20:00 pulls)
@@ -190,7 +193,8 @@ series:
     historical: "yes"
     repull:
       - {method: self_heal, ages: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], verify_after_mins: 720, note: "each pass re-pulls month-to-date, prior month when day <= 10 (markable-lib.js:64-77)"}
-    fix_hook: "Showrunner extension URL trigger #sr-ext-repull=markable_spend&from=..&to=.. (Markable API takes startDate/endDate, markable-lib.js:5-16)"
+      - {method: command, requires_fix: true, ages: all, verify_after_mins: 60, command: 'open -g -a "Google Chrome" "https://audrey-ops-platform.vercel.app/#sr-ext-repull=markable_spend&from={from}&to={to}"', note: "Markable, not Amazon: no amazon guard"}
+    fix_hook: "Showrunner extension URL trigger #sr-ext-repull=markable_spend&from=YYYY-MM-DD&to=YYYY-MM-DD (Markable API takes startDate/endDate, markable-lib.js:5-16)"
 
   - name: meta-daily-metrics
     title: Meta ads daily insights (Vercel cron meta-sync)
@@ -208,6 +212,7 @@ series:
     historical: "yes"          # time_range since/until, lib meta-sync.ts:159-163
     repull:
       - {method: http, path: /api/cron/meta-sync, ages: [1, 2, 3], verify_after_mins: 15, note: "re-pulls (latest stored - 3)..yesterday (meta-sync.ts:136-162)"}
+      - {method: http, requires_fix: true, ages: all, verify_after_mins: 15, path: "/api/cron/meta-sync?from={from}&to={to}"}
     fix_hook: "GET /api/cron/meta-sync?from=YYYY-MM-DD&to=YYYY-MM-DD (CRON_SECRET) re-pulls exactly that range"
 
   # ── Throughline (throughline-app) ───────────────────────────────────────────
@@ -282,6 +287,7 @@ series:
     historical: "partial"      # POST /api/admin/pulse-backfill aggregate recomputes from listing intervals
     repull:
       - {method: http, path: "/api/cron/pulse-daily-sync?ifMissing=1", ages: [1], verify_after_mins: 20, note: "skips when yesterday (UTC) is present for every team (route.ts:24-36,60)"}
+      - {method: http, requires_fix: true, ages: all, verify_after_mins: 20, path: "/api/cron/pulse-daily-sync?from={from}&to={to}"}
     fix_hook: "GET /api/cron/pulse-daily-sync?from=YYYY-MM-DD&to=YYYY-MM-DD (CRON_SECRET) runs the pulse-backfill aggregate for exactly that range"
 
   - name: pulse-odds-snapshots
@@ -332,8 +338,9 @@ series:
     floor: 1
     floor_basis: "structural: one central_oh row per week, all 8 weeks"
     historical: "partial"
-    repull: []
-    fix_hook: "GET /api/cron/pulse-daily-sync?from=..&to=.. (see pulse-daily-snapshots) also rolls up the weeks it touches"
+    repull:
+      - {method: http, requires_fix: true, ages: all, verify_after_mins: 20, path: "/api/cron/pulse-daily-sync?from={from}&to={to}", note: "from = the week's Monday, to = its Sunday"}
+    fix_hook: "GET /api/cron/pulse-daily-sync?from=YYYY-MM-DD&to=YYYY-MM-DD (see pulse-daily-snapshots) also rolls up the weeks the range touches"
 
   - name: pulse-signal-scores
     title: Pulse signal scores (Vercel cron pulse-signals)
@@ -351,6 +358,8 @@ series:
     historical: "yes"
     repull:
       - {method: http, path: /api/cron/pulse-signals, ages: [0, 1, 2, 3, 4, 5, 6], verify_after_mins: 20, note: "recomputes the current + 6 trailing weeks"}
+      - {method: http, requires_fix: true, ages: all, verify_after_mins: 20, path: "/api/cron/pulse-signals?from={from}&to={to}", note: "NOT ?scope=full: that recomputes all history with delete-by-geo (route.ts:43,56)"}
+    fix_hook: "GET /api/cron/pulse-signals?from=YYYY-MM-DD&to=YYYY-MM-DD (CRON_SECRET) recomputes exactly the weeks in that range (never ?scope=full, which deletes by geo and recomputes all history)"
 
   - name: pulse-market-health
     title: Pulse market health weekly (Vercel cron pulse-market-health)
@@ -368,6 +377,8 @@ series:
     historical: "yes"
     repull:
       - {method: http, path: /api/cron/pulse-market-health, ages: [0, 1, 2, 3, 4, 5, 6], verify_after_mins: 20}
+      - {method: http, requires_fix: true, ages: all, verify_after_mins: 20, path: "/api/cron/pulse-market-health?from={from}&to={to}", note: "NOT ?scope=full (delete-by-geo, all history)"}
+    fix_hook: "GET /api/cron/pulse-market-health?from=YYYY-MM-DD&to=YYYY-MM-DD (CRON_SECRET) recomputes exactly the weeks in that range (never ?scope=full)"
 
   - name: tma-cohort-showings
     title: ShowingTime TMA zip cohorts (extension, Mondays)
@@ -385,7 +396,8 @@ series:
     historical: "yes"          # manifest re-adds missing weeks of the last 13 (tma-manifest.ts:100-108,204)
     repull:
       - {method: self_heal, ages: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], verify_after_mins: 10080, note: "next Monday's TMA run re-adds missing weeks"}
-    fix_hook: "Throughline extension URL trigger #tl-ext-repull=tma&from=..&to=.. runs START_TMA (force) for those weeks"
+      - {method: command, requires_fix: true, ages: all, verify_after_mins: 60, command: 'open -g -a "Google Chrome" "https://throughlinepro.com/#tl-ext-repull=tma&from={from}&to={to}"'}
+    fix_hook: "Throughline extension URL trigger #tl-ext-repull=tma&from=YYYY-MM-DD&to=YYYY-MM-DD runs START_TMA (force) for the weeks in that range"
 
   - name: pulse-showings-weekly
     title: Pulse showings weekly rollup (daily-ingest)
@@ -403,6 +415,8 @@ series:
     historical: "yes"          # rebuilt when a daily ingest of that week lands
     repull:
       - {method: command, ages: [1], verify_after_mins: 45, guard: st_brief_sent, command: 'open -g -a "Google Chrome" "https://throughlinepro.com/#tl-ext-run-daily"', note: "the daily ingest of D-1..D-8 rolls up last week (daily-ingest/route.ts:89-110)"}
+      - {method: command, requires_fix: true, ages: all, verify_after_mins: 45, guard: st_brief_sent, command: 'open -g -a "Google Chrome" "https://throughlinepro.com/#tl-ext-repull=st&from={from}&to={to}"', note: "re-ingesting the week's days rolls the week up"}
+    fix_hook: "Throughline extension URL trigger #tl-ext-repull=st&from=YYYY-MM-DD&to=YYYY-MM-DD (see st-showings-daily); re-ingesting the week's days rebuilds its weekly rollup"
 
   - name: recap-reports
     title: ShowingTime recap report PDFs (extension, Mondays)
@@ -418,8 +432,9 @@ series:
     floor: 15
     floor_basis: "50% of 8-week median 31 (weeks 202639..202646: 29..33; 202638 = 51)"
     historical: "unknown"
-    repull: []
-    fix_hook: "Throughline extension URL trigger #tl-ext-repull=recap&from=..&to=.. runs START_RECAP (force)"
+    repull:
+      - {method: command, requires_fix: true, ages: all, verify_after_mins: 60, command: 'open -g -a "Google Chrome" "https://throughlinepro.com/#tl-ext-repull=recap&from={from}&to={to}"'}
+    fix_hook: "Throughline extension URL trigger #tl-ext-repull=recap&from=YYYY-MM-DD&to=YYYY-MM-DD runs START_RECAP (force) for the weeks in that range"
 
   - name: curb-inquiry-results
     title: Curb inquiry scan (Vercel cron, Mondays)
