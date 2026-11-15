@@ -11,6 +11,8 @@
 #               (rows counted inside the period's local-time range)
 #   filters     extra PostgREST filters (placeholders: {audrey_user}, {pulse_team})
 #   cadence     daily | weekly (period anchor = Monday) | monthly (anchor = the 1st)
+#   days        optional, daily only: weekdays the series is expected (mon..sun, e.g. [mon, tue, wed, thu, fri]);
+#               omitted = every day. Phase 0 found no weekday-only pull in either repo (all run daily incl. weekends)
 #   lag_days    days after the period anchor the data lands; ready_by = local time that day it must be complete.
 #               Before (anchor + lag_days) at ready_by the series' own pull/retries still own the period: no GAP.
 #   floor       rows per period at or above which the period is complete (Phase 0 formula: a constant count is

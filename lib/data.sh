@@ -8,6 +8,10 @@
 #                                         entries' reason + probe row (AC1 evidence); series=T checks that one as of T
 #   data.sh floors                        re-derive each watched floor from the last 30 days / 8 weeks / 3 months
 #   data.sh inventory-diff <ids-file>     names in the inventory file vs series.yaml (both directions)
+#   data.sh tick                          evaluate every watched series: gap transitions, re-pulls (supervisor)
+#   data.sh evaluate <series>             one series' tick
+#   data.sh status | heartbeat            DATA table (walkaway status) | heartbeat lines for open gaps
+#   data.sh state <series>                the series' gap state file
 #
 # T = "YYYY-MM-DD HH:MM" (ET) or an epoch. Counts are READ-ONLY: one REST GET per period with Prefer: count=exact and
 # Range: 0-0 (aggregates are disabled on both projects). The service-role key is read from the source's env file at
@@ -15,7 +19,7 @@
 #
 # Test seams: WALKAWAY_DATA_FILE (series.yaml), WALKAWAY_DATA_NOW (epoch "now"), WALKAWAY_DATA_FIXTURES=<dir>
 # (period counts of series <s> come from <dir>/<s>.json {"<period anchor>": count}; missing anchor = 0; a key
-# "__error" = every count errors).
+# "__error" = every count errors), WALKAWAY_DATA_COUNT_LOG=<file> (one line per period counted).
 
 set -uo pipefail
 
@@ -96,7 +100,26 @@ _periods() {
     *)       n=$(jq -r '.lookback_days' <<< "$s") ;;
   esac
   cur=$(_anchor_of "$cad" "$(data_today)")
-  for (( k = 0; k <= n; k++ )); do printf '%s\t%s\n' "$k" "$(_anchor_back "$cad" "$cur" "$k")"; done
+  local days a
+  days=$(jq -c '.days // empty' <<< "$s")
+  for (( k = 0; k <= n; k++ )); do
+    a=$(_anchor_back "$cad" "$cur" "$k")
+    # Weekday cadence (days: [mon..fri]): a daily period on an unscheduled weekday is not expected at all.
+    [[ -n "$days" && "$cad" == "daily" ]] && ! jq -e --arg d "$(_dow "$a")" 'index($d) != null' <<< "$days" > /dev/null && continue
+    printf '%s\t%s\n' "$k" "$a"
+  done
+}
+
+# _extra_periods <series-json> <anchors-json> -> "age<TAB>anchor" for listed anchors OLDER than the lookback (a gap
+# still being re-pulled or fixed stays counted after it ages out of the lookback)
+_extra_periods() {
+  [[ -n "${2:-}" ]] || return 0
+  local oldest a
+  oldest=$(_periods "$1" | tail -1 | cut -f2)
+  while IFS= read -r a; do
+    [[ -n "$a" && "$a" < "$oldest" ]] && printf '%s\t%s\n' "$(_age_of "$1" "$a")" "$a"
+  done < <(jq -r '.[]' <<< "$2" | sort -ru)
+  return 0
 }
 
 # _age_of <series-json> <anchor> -> periods between anchor and the current period
@@ -162,6 +185,7 @@ _rest_count() {
 _count() {
   local cfg="$1" s="$2" a="$3" name fx
   name=$(jq -r .name <<< "$s")
+  [[ -n "${WALKAWAY_DATA_COUNT_LOG:-}" ]] && echo "$name $a" >> "$WALKAWAY_DATA_COUNT_LOG"
   if [[ -n "${WALKAWAY_DATA_FIXTURES:-}" ]]; then
     fx="${WALKAWAY_DATA_FIXTURES}/${name}.json"
     if [[ -f "$fx" ]] && jq -e 'has("__error")' "$fx" > /dev/null 2>&1; then echo "E:$(jq -r .__error "$fx")"; return 0; fi
@@ -173,7 +197,9 @@ _count() {
 
 # ── check ────────────────────────────────────────────────────────────────────
 
-# data_check <config> <series> [only-anchors-json] -> JSON
+# data_check <config> <series> [selection-json] -> JSON
+#   selection {skip: [anchors], extra: [anchors]}: skip = known complete, not re-counted ("skipped"); extra = anchors
+#   counted even when older than the lookback (tracked gaps). No selection = every ready lookback period.
 #   {series, as_of, checked_at, floor, periods: [{period, key, age, ready_at, ready, count, status, query}],
 #    gaps: [{period, count, status}], last_complete, errors}
 # status: not_ready (period's ready_by not reached: not counted) | ok (>= floor) | short (0 < count < floor) |
@@ -186,11 +212,11 @@ data_check() {
   while IFS=$'\t' read -r age a; do
     ra=$(_ready_at "$s" "$a"); key=$(_period_key "$(jq -r '.key.type // "date"' <<< "$s")" "$a")
     rows+=("$age"$'\t'"$a"$'\t'"$ra"$'\t'"$key")
-    if (( ra <= now )) && { [[ -z "$only" ]] || jq -e --arg a "$a" 'index($a) != null' <<< "$only" > /dev/null; }; then
+    if (( ra <= now )) && { [[ -z "$only" ]] || ! jq -e --arg a "$a" '(.skip // []) | index($a) != null' <<< "$only" > /dev/null; }; then
       ( _count "$cfg" "$s" "$a" "$ctx" > "$tmp/$i" ) &
     fi
     i=$((i + 1))
-  done < <(_periods "$s")
+  done < <(_periods "$s"; [[ -n "$only" ]] && _extra_periods "$s" "$(jq -c '.extra // []' <<< "$only")")
   wait
   local floor out='[]' c st q
   floor=$(jq -r '.floor // 1' <<< "$s"); i=0
@@ -288,6 +314,211 @@ data_floors() {
   done < <(data_watched "$cfg")
 }
 
+# ── gap state machine ────────────────────────────────────────────────────────
+#
+# One state file per series: $WALKAWAY_HOME/data/state/<series>.json
+#   {series, gaps: {<period>: GAP}, ok_periods: [...], full_scan_date, last_complete, last_action, checked_at,
+#    error_ticks, fix_feature, fix_plan, fix_date, fix_merged, operator_pid, operator_spawned, incident}
+# GAP = {state, status (missing|short), opened_at, rows_before, rows_now, failed_tries, tries_today, tries_day,
+#        last_try {at, method, label, rc}, verify_at, need_operator, reason, closed_at, rows_after, closed_via}
+# Gap states (per period):
+#   OPEN       rows missing/under the floor past the period's ready_by (the series' own retries are done)   ntfy (grouped)
+#   REPULLING  a re-pull fired (or a self-heal wait started); verified at verify_at                       silent
+#   CLOSED     rows at/above the floor (verified by a count)                                              ntfy (grouped)
+#   FIXING     no re-pull path / re-pull failed twice: the data operator queued a fix build               ntfy
+#   ESCALATED  one question for Jim (lost dates, protected cause, unclear)                                ntfy high
+# A period is complete when its count reaches the floor; complete periods are cached (ok_periods) and re-counted
+# only on the first tick of each local day (full scan), so a normal tick costs one GET per open gap or new period.
+
+WALKAWAY_DATA_ERROR_TICKS="${WALKAWAY_DATA_ERROR_TICKS:-15}"
+
+_dstate_dir() { echo "${WALKAWAY_HOME}/data/state"; }
+_dstate_file() { echo "$(_dstate_dir)/$1.json"; }
+dstate_get() { local f; f=$(_dstate_file "$1"); [[ -f "$f" ]] && jq -r "$2 // empty" "$f"; }
+dstate_json() { local f; f=$(_dstate_file "$1"); [[ -f "$f" ]] && cat "$f" || jq -cn --arg s "$1" '{series: $s, gaps: {}, ok_periods: []}'; }
+
+# dstate_update <series> <jq-filter> [jq args...]  (atomic; creates the file if missing)
+dstate_update() {
+  local s="$1" filter="$2" f tmp
+  shift 2
+  f=$(_dstate_file "$s"); mkdir -p "$(_dstate_dir)"
+  [[ -f "$f" ]] || jq -n --arg s "$s" '{series: $s, gaps: {}, ok_periods: []}' > "$f"
+  tmp="${f}.tmp.$$"
+  jq "$@" "$filter" "$f" > "$tmp" && mv "$tmp" "$f"
+}
+
+_dlog() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] data: $*"; }
+_dnotify() { # line [priority]
+  # shellcheck source=lib/notify.sh
+  source "${DATA_DIR}/notify.sh"
+  notify_line "$1" "${2:-default}"
+}
+
+# _dates_label <periods...> -> "2026-11-09..11-13" for a consecutive daily run, else a comma list
+_dates_label() {
+  local -a p=("$@")
+  (( ${#p[@]} == 0 )) && return 0
+  (( ${#p[@]} == 1 )) && { echo "${p[0]}"; return 0; }
+  if (( ${#p[@]} > 2 )) && [[ "$(_day_shift "${p[0]}" "+$(( ${#p[@]} - 1 ))")" == "${p[${#p[@]}-1]}" ]]; then
+    echo "${p[0]}..${p[${#p[@]}-1]:5}"
+  else
+    local IFS=,; echo "${p[*]}" | sed 's/,/, /g'
+  fi
+}
+
+# data_gap_transition <series> <new-state> <action> <periods...>
+# Moves the listed gaps to new-state and records the series' last action. ntfy: one line per call (the caller
+# groups a series' periods per tick) for OPEN, CLOSED, FIXING and ESCALATED (priority high); REPULLING is silent.
+data_gap_transition() {
+  local s="$1" new="$2" action="$3" now
+  shift 3
+  (( $# > 0 )) || return 0
+  now=$(_data_now)
+  dstate_update "$s" '
+    reduce $ps[] as $p (.; .gaps[$p] = ((.gaps[$p] // {}) + {state: $st, since: ($now|tonumber)}))
+    | .last_action = $a' --arg st "$new" --arg a "$action" --arg now "$now" --argjson ps "$(printf '%s\n' "$@" | jq -R . | jq -sc .)"
+  _dlog "$s: $(_dates_label "$@") -> $new - $action"
+  case "$new" in
+    OPEN|CLOSED|FIXING) _dnotify "data $s: $new - $action" ;;
+    ESCALATED)          _dnotify "data $s: ESCALATED - $action" high ;;
+  esac
+}
+
+# _gap_status_line <count> <floor> -> "missing (0/10 rows)" | "short (4/10 rows)"
+_gap_word() { (( $1 > 0 )) && echo "short ($1/$2 rows)" || echo "missing (0/$2 rows)"; }
+
+# data_detect <config> <series> -> applies OPEN / CLOSED transitions from one count pass; prints nothing
+data_detect() {
+  local cfg="$1" name="$2" s st today full only res floor
+  s=$(data_get "$cfg" "$name"); st=$(dstate_json "$name"); today=$(data_today)
+  floor=$(jq -r '.floor // 1' <<< "$s")
+  full=0
+  [[ "$(jq -r '.full_scan_date // ""' <<< "$st")" != "$today" || "${WALKAWAY_DATA_FULL:-}" == "1" ]] && full=1
+  # Full scan: every ready lookback period. Otherwise skip the periods known complete. Always count every tracked
+  # non-CLOSED gap, also one older than the lookback.
+  only=$(jq -c --argjson full "$full" '{skip: (if $full == 1 then [] else (.ok_periods // []) end),
+           extra: [.gaps | to_entries[] | select(.value.state != "CLOSED") | .key]}' <<< "$st")
+  res=$(data_check "$cfg" "$name" "$only")
+  [[ -n "$res" ]] || return 1
+  dstate_update "$name" '.checked_at = ($n|tonumber)' --arg n "$(_data_now)"
+
+  # Count errors: never judged; a long run of them escalates once.
+  if jq -e '(.errors | length) > 0' <<< "$res" > /dev/null; then
+    local n
+    n=$(( $(dstate_get "$name" .error_ticks || echo 0) + 1 ))
+    dstate_update "$name" '.error_ticks = ($n|tonumber) | .last_action = $a' --arg n "$n" \
+      --arg a "count error ($n): $(jq -r '.errors[0] | "\(.period): \(.error)"' <<< "$res" | cut -c1-120)"
+    if (( n == WALKAWAY_DATA_ERROR_TICKS )); then
+      dstate_update "$name" '.error_escalated = true'
+      _dnotify "data $name: ESCALATED - the $name row count has failed $n ticks in a row ($(jq -r '.errors[0].error' <<< "$res" | cut -c1-100)). Look at the check or the source?" high
+    fi
+  else
+    dstate_update "$name" '.error_ticks = 0 | del(.error_escalated)'
+  fi
+
+  # Periods counted this pass.
+  local counted opened=() closed=() p c gst word=""
+  counted=$(jq -c '[.periods[] | select(.status == "ok" or .status == "short" or .status == "missing")]' <<< "$res")
+  while IFS=$'\t' read -r p c; do
+    [[ -n "$p" ]] || continue
+    gst=$(jq -r --arg p "$p" '.gaps[$p].state // ""' <<< "$st")
+    if (( c >= floor )); then
+      dstate_update "$name" '.ok_periods = ((.ok_periods // []) + [$p] | unique) | if .gaps[$p] then .gaps[$p].rows_now = ($c|tonumber) else . end' --arg p "$p" --arg c "$c"
+      if [[ -n "$gst" && "$gst" != "CLOSED" ]]; then
+        dstate_update "$name" '.gaps[$p] += {rows_after: ($c|tonumber), closed_at: ($n|tonumber), closed_via: (.gaps[$p].last_try.label // "rows landed (no re-pull by the supervisor)")}' \
+          --arg p "$p" --arg c "$c" --arg n "$(_data_now)"
+        closed+=("$p")
+      fi
+    else
+      dstate_update "$name" '.ok_periods = ((.ok_periods // []) - [$p]) | if .gaps[$p] then .gaps[$p].rows_now = ($c|tonumber) | .gaps[$p].status = $w else . end' \
+        --arg p "$p" --arg c "$c" --arg w "$( (( c > 0 )) && echo short || echo missing)"
+      if [[ -z "$gst" || "$gst" == "CLOSED" ]]; then
+        dstate_update "$name" '.gaps[$p] = {state: "NEW", status: $w, opened_at: ($n|tonumber), rows_before: ($c|tonumber), rows_now: ($c|tonumber),
+            failed_tries: 0, tries_today: 0, tries_day: $d}' \
+          --arg p "$p" --arg c "$c" --arg w "$( (( c > 0 )) && echo short || echo missing)" --arg n "$(_data_now)" --arg d "$today"
+        opened+=("$p")
+      fi
+    fi
+  done < <(jq -r '.[] | [.period, .count] | @tsv' <<< "$counted" | sort)
+
+  if (( ${#opened[@]} > 0 )); then
+    local cs
+    cs=$(jq -c --argjson ps "$(printf '%s\n' "${opened[@]}" | jq -R . | jq -sc .)" '[.periods[] | select(.period as $x | $ps | index($x))] | sort_by(.period) | map(.count)' <<< "$res")
+    if jq -e 'max == 0' <<< "$cs" > /dev/null; then word="missing (0/$floor rows)"
+    elif jq -e 'length == 1' <<< "$cs" > /dev/null; then word="short ($(jq -r '.[0]' <<< "$cs")/$floor rows)"
+    else word="under floor $floor (rows: $(jq -r 'join(", ")' <<< "$cs"))"; fi
+    data_gap_transition "$name" OPEN "$(_dates_label "${opened[@]}") $word" "${opened[@]}"
+  fi
+  if (( ${#closed[@]} > 0 )); then
+    local parts
+    parts=$(jq -r --argjson ps "$(printf '%s\n' "${closed[@]}" | jq -R . | jq -sc .)" '
+      [.gaps | to_entries[] | select(.key as $k | $ps | index($k)) | "\(.key) rows \(.value.rows_before) -> \(.value.rows_after)"] | join(", ")' "$(_dstate_file "$name")")
+    data_gap_transition "$name" CLOSED "$parts (floor $floor; via $(dstate_get "$name" ".gaps[\"${closed[0]}\"].closed_via"))" "${closed[@]}"
+  fi
+
+  # Bookkeeping: last complete period, full-scan stamp, prune caches outside the lookback.
+  local oldest
+  oldest=$(_periods "$s" | tail -1 | cut -f2)
+  dstate_update "$name" '
+      .last_complete = ([(.last_complete // ""), $lc] | max | if . == "" then null else . end)
+    | (if $full == "1" then .full_scan_date = $t else . end)
+    | .ok_periods = [(.ok_periods // [])[] | select(. >= $o)]
+    | .gaps = (.gaps | with_entries(select(.value.state != "CLOSED" or .key >= $o)))' \
+    --arg lc "$(jq -r '.last_complete // ""' <<< "$res")" --arg full "$full" --arg t "$today" --arg o "$oldest"
+}
+
+# data_evaluate <config> <series>: one series per tick: detect (counts -> OPEN / CLOSED), then act on open gaps.
+data_evaluate() {
+  local cfg="$1" name="$2"
+  data_detect "$cfg" "$name" || { _dlog "$name: detect error"; return 1; }
+  if declare -F data_act > /dev/null; then data_act "$cfg" "$name"; fi
+  return 0
+}
+
+# One pass over every watched series (called from the supervisor tick while $WALKAWAY_HOME/data.enabled exists).
+data_tick() {
+  local cfg name
+  cfg=$(data_config) || { _dlog "cannot parse $WALKAWAY_DATA_FILE"; return 1; }
+  while IFS= read -r name; do
+    [[ -n "$name" ]] || continue
+    data_evaluate "$cfg" "$name" || _dlog "$name: evaluate error"
+  done < <(data_watched "$cfg")
+}
+
+# Heartbeat lines: one per series with open (non-CLOSED) gaps.
+data_heartbeat_lines() {
+  local cfg name
+  cfg=$(data_config) || return 0
+  while IFS= read -r name; do
+    [[ -f "$(_dstate_file "$name")" ]] || continue
+    jq -r '[.gaps | to_entries[] | select(.value.state != "CLOSED")] as $g
+      | if ($g | length) == 0 then empty else
+          "data \(.series): \($g | length) open gap(s) " + ([$g[] | "\(.key) \(.value.state)"] | join(", ")) + " - \(.last_action // "-")"
+        end' "$(_dstate_file "$name")"
+  done < <(data_watched "$cfg")
+}
+
+# DATA table for `walkaway status`.
+data_status() {
+  local cfg name f
+  cfg=$(data_config) || { echo "DATA: cannot parse $WALKAWAY_DATA_FILE"; return 0; }
+  echo ""
+  echo "DATA ($(data_today), data watching $( [[ -f "${WALKAWAY_HOME}/data.enabled" ]] && echo on || echo OFF))"
+  {
+    printf 'SERIES\tLAST COMPLETE\tOPEN GAPS\tLAST ACTION\n'
+    while IFS= read -r name; do
+      f=$(_dstate_file "$name")
+      if [[ -f "$f" ]]; then
+        jq -r '[.series, (.last_complete // "-"),
+                ([.gaps | to_entries[] | select(.value.state != "CLOSED") | "\(.key[5:]) \(.value.state)"] | if length == 0 then "-" else join(", ") end),
+                ((.last_action // "-") | .[0:100])] | @tsv' "$f"
+      else
+        printf '%s\t-\t-\tnot checked yet\n' "$name"
+      fi
+    done < <(data_watched "$cfg")
+  } | column -t -s $'\t'
+}
+
 data_list() {
   jq -r '.series[] | [.name, (if .watch then "watch" else "excluded" end), (.cadence // "-"),
     (if .table then "\(.table).\(.key.column)" else "-" end), ((.floor // "-") | tostring),
@@ -319,7 +550,12 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
       if [[ -n "$out" ]]; then data_dump "$cfg" "$@" > "$out"; echo "wrote $out"; else data_dump "$cfg" "$@"; fi
       ;;
     floors) data_floors "$cfg" ;;
+    tick)      data_tick ;;
+    evaluate)  data_evaluate "$cfg" "${1:?series}" ;;
+    status)    data_status ;;
+    heartbeat) data_heartbeat_lines ;;
+    state)     jq . "$(_dstate_file "${1:?series}")" ;;
     inventory-diff) data_inventory_diff "$cfg" "${1:?ids-file}" ;;
-    *) echo "Usage: data.sh list | check <series> [--as-of T] | dump [--out F] [--as-of T] [series=T ...] | floors | inventory-diff <ids-file>" >&2; exit 1 ;;
+    *) echo "Usage: data.sh list | check <series> [--as-of T] | dump [--out F] [--as-of T] [series=T ...] | floors | inventory-diff <ids-file> | tick | evaluate <series> | status | heartbeat | state <series>" >&2; exit 1 ;;
   esac
 fi
