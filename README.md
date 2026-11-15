@@ -146,7 +146,11 @@ The data operator (`lib/data-operator.sh`, headless `claude -p` with `templates/
 - It then renders a fix plan whose `## Date-range re-pull hook` quotes the series' `fix_hook` verbatim, or it asks ONE question. Lost dates and post-fix failures are escalated without a model call.
 - One fix build per series per day; one builder per repo.
 
-After the fix merges, the gaps go back to OPEN and the hook (`requires_fix` in series.yaml) re-pulls exactly those dates. The count then confirms CLOSED. The 09/13/17 heartbeat lists only series with open gaps. `walkaway status` prints a DATA table (series, last complete, open gaps, last action) under JOBS.
+After the fix merges, the gaps go back to OPEN and the hook (`requires_fix` in series.yaml) re-pulls exactly those dates. The count then confirms CLOSED.
+- Every series whose source can re-pull a past period has a hook.
+- The supervisor substitutes `{from}`/`{to}` (ISO dates only) into its command or http path. That gives one call per run of consecutive gap periods: a weekly gap runs Monday..Sunday, a monthly gap the 1st..the last day.
+- A hook is never called before its fix merges (`hook_merged`).
+- A verify only judges a re-pull from a successful count taken at or after verify_at. A count error never uses up a try. The 09/13/17 heartbeat lists only series with open gaps. `walkaway status` prints a DATA table (series, last complete, open gaps, last action) under JOBS.
 
 ## Flags
 
