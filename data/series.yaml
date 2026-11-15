@@ -251,8 +251,12 @@ series:
     historical: "yes"          # START_BB_BACKFILL up to 90 days (bb-core.js:955-993)
     repull:
       - {method: command, ages: [1], verify_after_mins: 45, guard: st_brief_sent, command: 'open -g -a "Google Chrome" "https://throughlinepro.com/#tl-ext-run-daily"', note: "the ST URL trigger sets setBbPending(true) (background.js:95): BB pulls yesterday after ST"}
-      - {method: command, requires_fix: true, ages: all, verify_after_mins: 45, guard: st_brief_sent, command: 'open -g -a "Google Chrome" "https://throughlinepro.com/#tl-ext-repull=bb&from={from}&to={to}"'}
-    fix_hook: "Throughline extension URL trigger: https://throughlinepro.com/#tl-ext-repull=bb&from=YYYY-MM-DD&to=YYYY-MM-DD runs START_BB for each date (pullTableauDaily date, ET dates), then closes the tab"
+      # Built by throughline-app bb-repull-alert (extension v1.0.10): BB-only, one Tableau capture per date oldest
+      # first 6-12s apart, each recorded in bb_session_attempts; never the same date twice within an hour; stops on a
+      # signed-out session (one "BrokerBay signed out" ping/day). bb-ingest sends nothing, so no st_brief_sent guard.
+      # Up to 31 dates at ~2-3 min each, hence the 120-min verify.
+      - {method: command, requires_fix: true, ages: all, verify_after_mins: 120, command: 'open -g -a "Google Chrome" "https://throughlinepro.com/#tl-ext-repull=bb&from={from}&to={to}"'}
+    fix_hook: "Throughline extension URL trigger: https://throughlinepro.com/#tl-ext-repull=bb&from=YYYY-MM-DD&to=YYYY-MM-DD (alias of #tl-ext-run-bb?from=..&to=..) runs the BB capture for each date (to clamped to yesterday ET, max 31), records each, then closes the tab"
 
   - name: st-showings-forward
     title: ShowingTime forward book snapshot (extension, after ST)
