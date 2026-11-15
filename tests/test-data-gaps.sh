@@ -17,7 +17,10 @@ TEST_YAML="$ROOT/tests/fixtures/data/series-test.yaml"
 fresh() { # fresh scratch home + fixture dir
   S=$(mktemp -d); mkdir -p "$S/fx"
   export WALKAWAY_HOME="$S" WALKAWAY_DATA_FIXTURES="$S/fx" WALKAWAY_DATA_FILE="$TEST_YAML" WALKAWAY_DATA_COUNT_LOG="$S/counts.log"
+  export WALKAWAY_DATA_TRIGGER_CMD="$ROOT/tests/fixtures/data/trigger-stub.sh"
 }
+# opened <series> <period>: the gap was opened (data_evaluate may already have moved it on to REPULLING)
+opened() { [[ "$(gst "$1" "$2" state)" == OPEN || "$(gst "$1" "$2" state)" == REPULLING ]]; }
 at() { export WALKAWAY_DATA_NOW; WALKAWAY_DATA_NOW=$(TZ=America/New_York date -j -f '%Y-%m-%d %H:%M' "$1" +%s); }
 # fill <series> <from> <to> <count>: set fixture counts for every day in [from, to]
 fill() {
@@ -56,7 +59,7 @@ echo "D2 short day (under the floor) -> OPEN short with rows"
 fresh; at "2026-11-18 13:00"
 fill scratch-daily 2026-11-01 2026-11-17 12; setc scratch-daily 2026-11-16 4
 ev scratch-daily
-check "11-16 OPEN short rows 4" '[[ "$(gst scratch-daily 2026-11-16 state)" == OPEN && "$(gst scratch-daily 2026-11-16 status)" == short && "$(gst scratch-daily 2026-11-16 rows_before)" == 4 ]]'
+check "11-16 opened short rows 4" 'opened scratch-daily 2026-11-16 && [[ "$(gst scratch-daily 2026-11-16 status)" == short && "$(gst scratch-daily 2026-11-16 rows_before)" == 4 ]]'
 check "ntfy says short 4/10" 'grep -q "OPEN - 2026-11-16 short (4/10 rows)" "$S/logs/ntfy.log"'
 setc scratch-daily 2026-11-16 10
 ev scratch-daily
@@ -69,7 +72,7 @@ ev scratch-daily
 check "11-17 not a gap at 11:59 on 11-18" '[[ -z "$(gst scratch-daily 2026-11-17 state)" ]]'
 check "today (lag 1) never judged" '[[ -z "$(gst scratch-daily 2026-11-18 state)" ]]'
 at "2026-11-18 12:00"; ev scratch-daily
-check "11-17 OPEN at its ready_by 12:00" '[[ "$(gst scratch-daily 2026-11-17 state)" == OPEN ]]'
+check "11-17 opened at its ready_by 12:00" 'opened scratch-daily 2026-11-17'
 
 echo "D4 weekday cadence: weekend days without rows are not gaps"
 fresh; at "2026-11-18 13:00"

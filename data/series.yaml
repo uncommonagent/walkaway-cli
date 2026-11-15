@@ -80,7 +80,7 @@ series:
     ready_by: "11:00"        # morning slot 07-10 ET; 11-13 landed 11-14 07:59 ET
     floor: 13
     floor_basis: "50% of 30-day median 27 (range 21..41)"
-    historical: yes          # Custom Date Range, extension/heal-lib.js:15-75
+    historical: "yes"          # Custom Date Range, extension/heal-lib.js:15-75
     repull:
       - {method: run_now, report_type: tracking_offsite, ages: [1], guard: amazon, verify_after_mins: 30}
       - {method: self_heal, ages: [2, 3, 4, 5, 6, 7, 8], verify_after_mins: 180, note: "extension self-heal: /api/ingest/amazon/missing (today-8..today-2) + heal-lib.js, every poll tick"}
@@ -100,7 +100,7 @@ series:
     ready_by: "11:00"
     floor: 2
     floor_basis: "structural: all 30 days = 2"
-    historical: yes
+    historical: "yes"
     repull:
       - {method: run_now, report_type: tracking_onsite, ages: [1], guard: amazon, verify_after_mins: 30}
       - {method: self_heal, ages: [2, 3, 4, 5, 6, 7, 8], verify_after_mins: 180, note: "extension self-heal (as offsite)"}
@@ -120,7 +120,7 @@ series:
     ready_by: "11:00"        # morning pulls D-2; 11-12 landed 11-14 07:39 ET
     floor: 3
     floor_basis: "50% of 30-day median 7 (range 1..88)"
-    historical: yes          # fromDate/toDate, extension/connect-runner.js:495-530
+    historical: "yes"          # fromDate/toDate, extension/connect-runner.js:495-530
     repull:
       - {method: run_now, report_type: cc, ages: [2], hours: ["00:00", "12:00"], guard: amazon, verify_after_mins: 25, note: "run-now before noon pulls D-2 (poll/route.ts:129-133)"}
       - {method: run_now, report_type: cc, ages: [1], hours: ["12:00", "24:00"], guard: amazon, verify_after_mins: 25, note: "run-now after noon pulls D-1"}
@@ -140,7 +140,7 @@ series:
     ready_by: "11:00"        # 11-12 landed 11-14 07:43 ET
     floor: 38
     floor_basis: "50% of 30-day median 77 (range 49..110)"
-    historical: yes
+    historical: "yes"
     repull:
       - {method: run_now, report_type: spc, ages: [2], hours: ["00:00", "12:00"], guard: amazon, verify_after_mins: 25}
       - {method: run_now, report_type: spc, ages: [1], hours: ["12:00", "24:00"], guard: amazon, verify_after_mins: 25}
@@ -161,7 +161,7 @@ series:
     ready_by: "11:00"
     floor: 2
     floor_basis: "structural: all 30 days = 2 (one row per program)"
-    historical: yes
+    historical: "yes"
     repull:
       - {method: self_heal, ages: all, verify_after_mins: 720, note: "every morning/evening run re-pulls the last 35 days (background.js:572, connect-runner.js:280-289)"}
     fix_hook: "Showrunner extension URL trigger #sr-ext-repull=connect_summary&from=..&to=.."
@@ -179,7 +179,7 @@ series:
     ready_by: "09:00"        # 07:00 pass; 11-13 landed 11-14 06:59 ET
     floor: 1
     floor_basis: "structural: all 30 days = 1"
-    historical: yes
+    historical: "yes"
     repull:
       - {method: self_heal, ages: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], verify_after_mins: 720, note: "each pass re-pulls month-to-date, prior month when day <= 10 (markable-lib.js:64-77)"}
     fix_hook: "Showrunner extension URL trigger #sr-ext-repull=markable_spend&from=..&to=.. (Markable API takes startDate/endDate, markable-lib.js:5-16)"
@@ -197,7 +197,7 @@ series:
     ready_by: "09:00"        # cron 12:00 UTC
     floor: 1
     floor_basis: "50% of 30-day median 3 (range 3..9)"
-    historical: yes          # time_range since/until, lib meta-sync.ts:159-163
+    historical: "yes"          # time_range since/until, lib meta-sync.ts:159-163
     repull:
       - {method: http, path: /api/cron/meta-sync, ages: [1, 2, 3], verify_after_mins: 15, note: "re-pulls (latest stored - 3)..yesterday (meta-sync.ts:136-162)"}
     fix_hook: "GET /api/cron/meta-sync?from=YYYY-MM-DD&to=YYYY-MM-DD (CRON_SECRET) re-pulls exactly that range"
@@ -216,7 +216,7 @@ series:
     ready_by: "12:45"        # after the 12:30 failed-date retry (jobs.yaml showingtime retry_end)
     floor: 1
     floor_basis: "structural: one is_total row per day, all 30 days"
-    historical: yes          # FromDate/ToDate, pull-core.js:80-93
+    historical: "yes"          # FromDate/ToDate, pull-core.js:80-93
     repull:
       - {method: command, ages: [1, 2, 3, 4, 5, 6, 7, 8], verify_after_mins: 30, command: 'open -g -a "Google Chrome" "https://throughlinepro.com/#tl-ext-run-daily"', note: "URL trigger pulls D-1..D-8 (background.js:89-99, pull-core.js:70-75)"}
       - {method: command, requires_fix: true, ages: all, verify_after_mins: 45, command: 'open -g -a "Google Chrome" "https://throughlinepro.com/#tl-ext-repull=st&from={from}&to={to}"'}
@@ -235,7 +235,7 @@ series:
     ready_by: "13:00"        # BB runs after ST terminal; 11-08 captured 11-09 06:20 ET
     floor: 10
     floor_basis: "50% of 30-day median 21 (range 19..21)"
-    historical: yes          # START_BB_BACKFILL up to 90 days (bb-core.js:955-993)
+    historical: "yes"          # START_BB_BACKFILL up to 90 days (bb-core.js:955-993)
     repull:
       - {method: command, ages: [1], verify_after_mins: 45, command: 'open -g -a "Google Chrome" "https://throughlinepro.com/#tl-ext-run-daily"', note: "the ST URL trigger sets setBbPending(true) (background.js:95): BB pulls yesterday after ST"}
       - {method: command, requires_fix: true, ages: all, verify_after_mins: 45, command: 'open -g -a "Google Chrome" "https://throughlinepro.com/#tl-ext-repull=bb&from={from}&to={to}"'}
@@ -254,7 +254,7 @@ series:
     ready_by: "13:00"        # 11-14 captured 11-14 06:39 ET
     floor: 4
     floor_basis: "structural: all 27 days = 4 (horizons 0..3)"
-    historical: no           # as-of snapshot of the forward book: a missed day cannot be rebuilt
+    historical: "no"           # as-of snapshot of the forward book: a missed day cannot be rebuilt
     repull:
       - {method: command, ages: [0], verify_after_mins: 45, command: 'open -g -a "Google Chrome" "https://throughlinepro.com/#tl-ext-run-daily"', note: "today only: the forward pull runs right after a successful ST daily"}
 
@@ -271,7 +271,7 @@ series:
     ready_by: "07:00"        # cron 07:30 UTC, ifMissing 10:00 UTC; 11-14 created 11-15 02:36 ET
     floor: 1
     floor_basis: "structural: one central_oh row per day, all 30 days"
-    historical: partial      # POST /api/admin/pulse-backfill aggregate recomputes from listing intervals
+    historical: "partial"      # POST /api/admin/pulse-backfill aggregate recomputes from listing intervals
     repull:
       - {method: http, path: "/api/cron/pulse-daily-sync?ifMissing=1", ages: [1], verify_after_mins: 20, note: "skips when yesterday (UTC) is present for every team (route.ts:24-36,60)"}
     fix_hook: "GET /api/cron/pulse-daily-sync?from=YYYY-MM-DD&to=YYYY-MM-DD (CRON_SECRET) runs the pulse-backfill aggregate for exactly that range"
@@ -289,7 +289,7 @@ series:
     ready_by: "08:00"        # cron 10:00 UTC; 11-14 created 05:00 ET
     floor: 22
     floor_basis: "50% of 43: 43 every day for the last 27 days, but the count is not structural (one row per market; 2026-10-05..10-11 had 3), so the 50% rule applies"
-    historical: no           # as-of-today market odds
+    historical: "no"           # as-of-today market odds
     repull:
       - {method: http, path: /api/cron/pulse-macro, ages: [0], verify_after_mins: 15}
 
@@ -306,7 +306,7 @@ series:
     ready_by: "08:00"        # cron 10:00 UTC; ran 11-15 05:01 ET
     floor: 1
     floor_basis: "structural: one run row per day, all 27 days"
-    historical: no           # a run ledger: only today's run can be re-run
+    historical: "no"           # a run ledger: only today's run can be re-run
     repull:
       - {method: http, path: /api/cron/pulse-events-refresh, ages: [0], verify_after_mins: 15}
 
@@ -323,7 +323,7 @@ series:
     ready_by: "07:00"
     floor: 1
     floor_basis: "structural: one central_oh row per week, all 8 weeks"
-    historical: partial
+    historical: "partial"
     repull: []
     fix_hook: "GET /api/cron/pulse-daily-sync?from=..&to=.. (see pulse-daily-snapshots) also rolls up the weeks it touches"
 
@@ -340,7 +340,7 @@ series:
     ready_by: "07:00"
     floor: 264
     floor_basis: "50% of 8-week median 528 (range 515..534)"
-    historical: yes
+    historical: "yes"
     repull:
       - {method: http, path: /api/cron/pulse-signals, ages: [0, 1, 2, 3, 4, 5, 6], verify_after_mins: 20, note: "recomputes the current + 6 trailing weeks"}
 
@@ -357,7 +357,7 @@ series:
     ready_by: "07:00"
     floor: 264
     floor_basis: "50% of 8-week median 529 (range 517..536)"
-    historical: yes
+    historical: "yes"
     repull:
       - {method: http, path: /api/cron/pulse-market-health, ages: [0, 1, 2, 3, 4, 5, 6], verify_after_mins: 20}
 
@@ -374,7 +374,7 @@ series:
     ready_by: "13:00"
     floor: 256
     floor_basis: "50% of 8-week median 512 (range 456..586)"
-    historical: yes          # manifest re-adds missing weeks of the last 13 (tma-manifest.ts:100-108,204)
+    historical: "yes"          # manifest re-adds missing weeks of the last 13 (tma-manifest.ts:100-108,204)
     repull:
       - {method: self_heal, ages: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], verify_after_mins: 10080, note: "next Monday's TMA run re-adds missing weeks"}
     fix_hook: "Throughline extension URL trigger #tl-ext-repull=tma&from=..&to=.. runs START_TMA (force) for those weeks"
@@ -392,7 +392,7 @@ series:
     ready_by: "13:00"        # 202645 uploaded 11-09 06:09 ET
     floor: 1
     floor_basis: "structural: one row per week, all 8 weeks"
-    historical: yes          # rebuilt when a daily ingest of that week lands
+    historical: "yes"          # rebuilt when a daily ingest of that week lands
     repull:
       - {method: command, ages: [1], verify_after_mins: 45, command: 'open -g -a "Google Chrome" "https://throughlinepro.com/#tl-ext-run-daily"', note: "the daily ingest of D-1..D-8 rolls up last week (daily-ingest/route.ts:89-110)"}
 
@@ -409,7 +409,7 @@ series:
     ready_by: "13:00"
     floor: 15
     floor_basis: "50% of 8-week median 31 (weeks 202639..202646: 29..33; 202638 = 51)"
-    historical: unknown
+    historical: "unknown"
     repull: []
     fix_hook: "Throughline extension URL trigger #tl-ext-repull=recap&from=..&to=.. runs START_RECAP (force)"
 
@@ -426,7 +426,7 @@ series:
     ready_by: "08:00"        # cron 10:30 UTC Monday; 11-09 scanned 05:30 ET
     floor: 1
     floor_basis: "50% of 9-week median 2 (range 1..2)"
-    historical: no           # trailing 7 days as of the scan
+    historical: "no"           # trailing 7 days as of the scan
     repull: []
 
   - name: pulse-member-snapshots
@@ -442,7 +442,7 @@ series:
     ready_by: "08:00"        # cron 06:00 UTC on the 1st
     floor: 5065
     floor_basis: "50% of 3-month median 10131 (10082 / 10131 / 10161)"
-    historical: no           # live roster
+    historical: "no"           # live roster
     repull: []
 
   # ── excluded: listed so the inventory diff is 0, never gap-checked ───────────

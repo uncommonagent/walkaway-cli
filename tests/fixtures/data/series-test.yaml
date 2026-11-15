@@ -11,19 +11,19 @@ guards:
     cc_batch: {source: scratch, query: "cc_optin_runs?select=status&run_date=eq.{today}", predicate: 'any(.[]; .status == "RUNNING")'}
 series:
   - {name: scratch-daily, watch: true, owner_repo: /tmp/walkaway-data-test-repo, source: scratch, table: t_daily, key: {column: d, type: date},
-     filters: "", cadence: daily, lag_days: 1, ready_by: "12:00", floor: 10, floor_basis: test, historical: yes,
+     filters: "", cadence: daily, lag_days: 1, ready_by: "12:00", floor: 10, floor_basis: test, historical: "yes",
      repull: [{method: command, ages: [1, 2, 3], verify_after_mins: 30, command: "true"}],
      fix_hook: "test hook #scratch-repull&from=..&to=.."}
   - {name: scratch-weekday, watch: true, owner_repo: /tmp/walkaway-data-test-repo, source: scratch, table: t_wd, key: {column: d, type: date},
-     filters: "", cadence: daily, days: [mon, tue, wed, thu, fri], lag_days: 1, ready_by: "12:00", floor: 1, floor_basis: test, historical: yes, repull: []}
+     filters: "", cadence: daily, days: [mon, tue, wed, thu, fri], lag_days: 1, ready_by: "12:00", floor: 1, floor_basis: test, historical: "yes", repull: []}
   - {name: scratch-weekly, watch: true, owner_repo: /tmp/walkaway-data-test-repo, source: scratch, table: t_wk, key: {column: yw, type: yearweek},
-     filters: "", cadence: weekly, lag_days: 7, ready_by: "07:00", floor: 100, floor_basis: test, historical: yes, repull: []}
+     filters: "", cadence: weekly, lag_days: 7, ready_by: "07:00", floor: 100, floor_basis: test, historical: "yes", repull: []}
   - {name: scratch-amazon, watch: true, owner_repo: /tmp/walkaway-data-test-repo, source: scratch, table: t_amz, key: {column: d, type: date},
-     filters: "", cadence: daily, lag_days: 1, ready_by: "11:00", floor: 5, floor_basis: test, historical: yes,
+     filters: "", cadence: daily, lag_days: 1, ready_by: "11:00", floor: 5, floor_basis: test, historical: "yes",
      repull: [{method: run_now, report_type: tracking_offsite, ages: [1], guard: amazon, verify_after_mins: 30},
               {method: self_heal, ages: [2, 3, 4], verify_after_mins: 180},
               {method: command, requires_fix: true, ages: all, guard: amazon, verify_after_mins: 60, command: "echo fix-hook {from} {to}"}],
      fix_hook: "test hook #sr-ext-repull=tracking_offsite&from=..&to=.."}
   - {name: scratch-lost, watch: true, owner_repo: /tmp/walkaway-data-test-repo, source: scratch, table: t_lost, key: {column: d, type: date},
-     filters: "", cadence: daily, lag_days: 0, ready_by: "13:00", floor: 4, floor_basis: test, historical: no, repull: [{method: command, ages: [0], verify_after_mins: 45, command: "true"}]}
+     filters: "", cadence: daily, lag_days: 0, ready_by: "13:00", floor: 4, floor_basis: test, historical: "no", repull: [{method: command, ages: [0], verify_after_mins: 45, command: "true"}]}
   - {name: scratch-excluded, watch: false, owner_repo: /tmp/walkaway-data-test-repo, reason: "test exclusion", covered_by: "-"}

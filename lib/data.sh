@@ -467,6 +467,239 @@ data_detect() {
     --arg lc "$(jq -r '.last_complete // ""' <<< "$res")" --arg full "$full" --arg t "$today" --arg o "$oldest"
 }
 
+# ── re-pull (plan item 2) ────────────────────────────────────────────────────
+#
+# For every OPEN gap: pick the first repull method that covers the gap's age (and, for run-now cc/spc, the local
+# hour), check its guard, fire it once for all gaps it covers this tick (from = oldest, to = newest), and verify
+# at verify_at: rows at/above the floor -> CLOSED (data_detect), else the try failed -> OPEN again. Max
+# max_tries_per_day tries per gap per local day; a guard deferral (business hours, CC batch, pacing) is not a try.
+# Two failed tries, or no method covering the gap's age, hands the gap to the data operator (lib/data-operator.sh:
+# fix build or one question). A method marked requires_fix is the date-range hook a fix build adds: used only
+# after that fix merged (.fix_merged).
+#
+# Triggers (the series' own pull paths only):
+#   run_now   PATCH extension_report_state SET run_now_requested_at = now WHERE user_id = <audrey_user> AND
+#             report_type = <one allow-listed base type>: exactly what the Showrunner run-now route writes
+#   http      GET <app_url><path> with Authorization: Bearer <cron secret>, read from the env file at call time and
+#             handed to curl on stdin (never argv/logs)
+#   command   the series' fixed local command ({from}/{to} substituted; ISO dates only)
+#   self_heal nothing fires: the series refills itself; the try is the wait until verify_at
+# Test seam: WALKAWAY_DATA_TRIGGER_CMD=<script> replaces every trigger: called as <script> <series> <method>
+# <arg> <from> <to>; its exit code is the trigger's rc. WALKAWAY_DATA_GUARD_FIXTURE=<file> answers the CC-batch query.
+
+WALKAWAY_DATA_RUN_NOW_TYPES="tracking_offsite tracking_onsite bounty cc spc connect_summary"
+WALKAWAY_DATA_HTTP_TIMEOUT="${WALKAWAY_DATA_HTTP_TIMEOUT:-30}"
+
+_drepull_log() { mkdir -p "${WALKAWAY_HOME}/logs"; echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" >> "${WALKAWAY_HOME}/logs/data-repull.log"; }
+
+# _hhmm_now -> local HH:MM of "now"
+_hhmm_now() { TZ=$JOBS_TZ date -r "$(_data_now)" +%H:%M; }
+
+# _amazon_guard <config> -> "" when an Amazon trigger may fire now, else the reason to wait
+_amazon_guard() {
+  local cfg="$1" g hs he now last pace rows
+  g=$(jq -c '.guards.amazon // {}' <<< "$cfg")
+  hs=$(jq -r '.business_hours.start // "09:00"' <<< "$g"); he=$(jq -r '.business_hours.end // "19:00"' <<< "$g")
+  now=$(_hhmm_now)
+  if [[ "$now" < "$hs" || ! "$now" < "$he" ]]; then echo "outside Amazon business hours $hs-$he"; return 0; fi
+  last=$(cat "${WALKAWAY_HOME}/data/state/_amazon_last_trigger" 2>/dev/null || echo 0)
+  pace=$(( $(jq -r '.pace_mins // 15' <<< "$g") * 60 ))
+  if (( $(_data_now) - last < pace )); then echo "paced: last Amazon trigger $(( ($(_data_now) - last) / 60 ))m ago (one per $((pace / 60))m)"; return 0; fi
+  if [[ -n "${WALKAWAY_DATA_GUARD_FIXTURE:-}" ]]; then
+    rows=$(cat "$WALKAWAY_DATA_GUARD_FIXTURE")
+  else
+    rows=$(_rest_get "$cfg" "$(jq -r '.cc_batch.source' <<< "$g")" data-guard cc_batch "$(_subst "$(jq -r '.cc_batch.query' <<< "$g")" "$(_data_ctx "$cfg")")")
+  fi
+  if jq -e 'type == "object"' <<< "$rows" > /dev/null 2>&1; then echo "CC batch check failed ($(jq -r '.__error // "error"' <<< "$rows" | cut -c1-80))"; return 0; fi
+  if jq -e "$(jq -r '.cc_batch.predicate' <<< "$g")" <<< "$rows" > /dev/null 2>&1; then echo "CC batch in flight"; return 0; fi
+  return 0
+}
+
+# _method_for <config> <series-json> <age> <fix_merged> -> "go <idx>" | "wait <reason>" | "none"
+_method_for() {
+  local cfg="$1" s="$2" age="$3" fixed="$4" n i m h0 h1 now wait="" g
+  n=$(jq -r '(.repull // []) | length' <<< "$s"); now=$(_hhmm_now)
+  for (( i = 0; i < n; i++ )); do
+    m=$(jq -c --argjson i "$i" '.repull[$i]' <<< "$s")
+    [[ "$(jq -r '.requires_fix // false' <<< "$m")" == "true" && "$fixed" != "true" ]] && continue
+    jq -e --argjson a "$age" '.ages == "all" or ((.ages // []) | index($a) != null)' <<< "$m" > /dev/null || continue
+    if jq -e '.hours' <<< "$m" > /dev/null; then
+      h0=$(jq -r '.hours[0]' <<< "$m"); h1=$(jq -r '.hours[1]' <<< "$m")
+      if [[ "$now" < "$h0" ]]; then wait=${wait:-"$(jq -r .method <<< "$m") window opens $h0"}; continue; fi
+      [[ "$now" < "$h1" || "$h1" == "24:00" ]] || continue
+    fi
+    if [[ "$(jq -r '.guard // ""' <<< "$m")" == "amazon" ]]; then
+      g=$(_amazon_guard "$cfg")
+      if [[ -n "$g" ]]; then wait=${wait:-$g}; continue; fi
+    fi
+    echo "go $i"; return 0
+  done
+  [[ -n "$wait" ]] && { echo "wait $wait"; return 0; }
+  echo "none"
+}
+
+# _method_label <method-json> -> short human label
+_method_label() {
+  jq -r 'if .method == "run_now" then "run-now \(.report_type)"
+         elif .method == "http" then "GET \(.path)"
+         elif .method == "self_heal" then "self-heal wait"
+         else "command" + (if .requires_fix then " (fix hook)" else "" end) + ": " + (.command | .[0:90]) end' <<< "$1"
+}
+
+# _run_now <config> <series-json> <report_type> -> rc 0 if exactly one state row was stamped
+_run_now() {
+  local cfg="$1" s="$2" rt="$3" conn url key out code ctx user
+  [[ " $WALKAWAY_DATA_RUN_NOW_TYPES " == *" $rt "* ]] || { _drepull_log "run_now refused: $rt not allow-listed"; return 2; }
+  ctx=$(_data_ctx "$cfg"); user=$(jq -r '.audrey_user // ""' <<< "$ctx")
+  [[ "$user" =~ ^[0-9a-f-]{36}$ ]] || { _drepull_log "run_now refused: no audrey_user"; return 2; }
+  conn=$(_source_conn "$cfg" "$(jq -r .source <<< "$s")") || return 2
+  url=${conn%%$'\t'*}; key=${conn#*$'\t'}
+  out=$(mktemp)
+  code=$(printf 'header = "apikey: %s"\nheader = "Authorization: Bearer %s"\nheader = "Content-Type: application/json"\nheader = "Prefer: return=representation"\n' "$key" "$key" |
+         curl -sS -g -m 25 -K - -X PATCH -o "$out" -w '%{http_code}' \
+           --data "{\"run_now_requested_at\":\"$(_utc "$(_data_now)")\"}" \
+           "$url/rest/v1/extension_report_state?user_id=eq.${user}&report_type=eq.${rt}&select=report_type,run_now_requested_at" 2>/dev/null) || code=curl-failed
+  _drepull_log "run_now $rt -> HTTP $code $(head -c 200 "$out")"
+  if [[ "$code" == 2* ]] && [[ "$(jq 'length' "$out" 2>/dev/null)" == 1 ]]; then rm -f "$out"; return 0; fi
+  rm -f "$out"; return 1
+}
+
+# _http_get <config> <series-json> <path> -> rc 0 on 2xx (or a still-running request past the timeout)
+_http_get() {
+  local cfg="$1" s="$2" path="$3" src envf base secret out code
+  src=$(jq -c --arg s "$(jq -r .source <<< "$s")" '.sources[$s]' <<< "$cfg")
+  base=$(jq -r '.app_url' <<< "$src"); envf=$(_expand_home "$(jq -r '.env_file' <<< "$src")")
+  secret=$(_env_val "$envf" "$(jq -r '.cron_secret_var' <<< "$src")")
+  [[ -n "$secret" ]] || { _drepull_log "http $path refused: no cron secret"; return 2; }
+  out=$(mktemp)
+  code=$(printf 'header = "Authorization: Bearer %s"\n' "$secret" |
+         curl -sS -g -m "$WALKAWAY_DATA_HTTP_TIMEOUT" -K - -o "$out" -w '%{http_code}' "$base$path" 2>/dev/null) || true
+  _drepull_log "http GET $base$path -> HTTP ${code:-none} $(head -c 300 "$out" | tr '\n' ' ')"
+  rm -f "$out"
+  [[ "$code" == 2* ]] && return 0
+  # The route keeps running server-side after our client timeout (long syncs): the verify step decides.
+  [[ "$code" == "000" ]] && return 0
+  return 1
+}
+
+# _fire <config> <series-json> <idx> <from> <to> -> rc of the trigger
+_fire() {
+  local cfg="$1" s="$2" i="$3" from="$4" to="$5" m method arg name cmd rc=0
+  m=$(jq -c --argjson i "$i" '.repull[$i]' <<< "$s"); method=$(jq -r .method <<< "$m"); name=$(jq -r .name <<< "$s")
+  arg=$(jq -r '.report_type // .path // .command // ""' <<< "$m")
+  [[ "$from" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ && "$to" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || return 2
+  if [[ -n "${WALKAWAY_DATA_TRIGGER_CMD:-}" ]]; then
+    "$WALKAWAY_DATA_TRIGGER_CMD" "$name" "$method" "$arg" "$from" "$to" >> "${WALKAWAY_HOME}/logs/data-repull.log" 2>&1 || rc=$?
+    _drepull_log "$name: stub $method $arg $from..$to rc=$rc"
+  else
+    case "$method" in
+      run_now)   _run_now "$cfg" "$s" "$arg" || rc=$? ;;
+      http)      _http_get "$cfg" "$s" "$arg" || rc=$? ;;
+      command)
+        cmd=${arg//\{from\}/$from}; cmd=${cmd//\{to\}/$to}
+        _drepull_log "$name: command $cmd"
+        bash -c "$cmd" >> "${WALKAWAY_HOME}/logs/data-repull.log" 2>&1 & local p=$! w=0
+        while kill -0 "$p" 2>/dev/null && (( w < 30 )); do sleep 1; w=$((w + 1)); done
+        kill -0 "$p" 2>/dev/null && { kill "$p" 2>/dev/null; rc=124; } || { wait "$p"; rc=$?; } ;;
+      self_heal) _drepull_log "$name: self-heal wait $from..$to" ;;
+      *) rc=2 ;;
+    esac
+  fi
+  if [[ "$(jq -r '.guard // ""' <<< "$m")" == "amazon" ]]; then
+    mkdir -p "${WALKAWAY_HOME}/data/state"; _data_now > "${WALKAWAY_HOME}/data/state/_amazon_last_trigger"
+  fi
+  return "$rc"
+}
+
+# data_act <config> <series>: verify due tries, fire re-pulls for OPEN gaps, hand the rest to the data operator.
+data_act() {
+  local cfg="$1" name="$2" s st today now max fixed
+  s=$(data_get "$cfg" "$name"); today=$(data_today); now=$(_data_now)
+  max=$(jq -r '.max_tries_per_day' <<< "$s")
+  if declare -F _data_operator_alive > /dev/null && _data_operator_alive "$name"; then
+    dstate_update "$name" '.last_action = "data operator running"'; return 0
+  fi
+  if declare -F data_fix_progress > /dev/null && [[ -n "$(dstate_get "$name" .fix_feature)" && "$(dstate_get "$name" .fix_merged)" != "true" ]]; then
+    data_fix_progress "$cfg" "$name"
+  fi
+  fixed=$(dstate_get "$name" .fix_merged); fixed=${fixed:-false}
+
+  # 1. Verify: a REPULLING gap past verify_at whose rows did not land (detect ran first this tick) = a failed try.
+  local p failed=()
+  while IFS= read -r p; do [[ -n "$p" ]] && failed+=("$p"); done < <(jq -r --argjson n "$now" '
+      .gaps | to_entries[] | select(.value.state == "REPULLING" and (.value.verify_at // 0) <= $n) | .key' "$(_dstate_file "$name")")
+  if (( ${#failed[@]} > 0 )); then
+    dstate_update "$name" 'reduce $ps[] as $p (.; .gaps[$p].failed_tries += 1 | .gaps[$p].state = "OPEN" | .gaps[$p].since = ($n|tonumber))
+        | .last_action = $a' --argjson ps "$(printf '%s\n' "${failed[@]}" | jq -R . | jq -sc .)" --arg n "$now" \
+      --arg a "re-pull did not land rows for $(_dates_label "${failed[@]}") ($(jq -r --arg p "${failed[0]}" '.gaps[$p] | "\(.last_try.label): rows \(.rows_now)"' "$(_dstate_file "$name")")/$(jq -r .floor <<< "$s"))"
+    _dlog "$name: $(_dates_label "${failed[@]}") try failed (rows below floor at verify)"
+  fi
+
+  # 2. Plan this tick: per OPEN gap -> fire group / wait / operator.
+  local -a groups=() handoff=()
+  local waits="" age dec gi reason
+  st=$(dstate_json "$name")
+  while IFS=$'\t' read -r p; do
+    [[ -n "$p" ]] || continue
+    local g ft td tday
+    g=$(jq -c --arg p "$p" '.gaps[$p]' <<< "$st")
+    [[ "$(jq -r '.need_operator // false' <<< "$g")" == "true" ]] && continue
+    ft=$(jq -r '.failed_tries // 0' <<< "$g"); tday=$(jq -r '.tries_day // ""' <<< "$g"); td=$(jq -r '.tries_today // 0' <<< "$g")
+    [[ "$tday" != "$today" ]] && { td=0; dstate_update "$name" '.gaps[$p].tries_today = 0 | .gaps[$p].tries_day = $d' --arg p "$p" --arg d "$today"; }
+    if (( ft >= 2 )); then
+      handoff+=("$p"); dstate_update "$name" '.gaps[$p].need_operator = true | .gaps[$p].reason = $r' --arg p "$p" \
+        --arg r "re-pull failed twice ($(jq -r '.last_try.label // "-"' <<< "$g"))"
+      continue
+    fi
+    if (( td >= max )); then waits+="${p:5}: $max tries today; "; continue; fi
+    age=$(_age_of "$s" "$p")
+    dec=$(_method_for "$cfg" "$s" "$age" "$fixed")
+    case "$dec" in
+      go\ *)  gi=${dec#go }; groups+=("$gi"$'\t'"$p") ;;
+      wait\ *) waits+="${p:5}: ${dec#wait }; " ;;
+      none)
+        handoff+=("$p")
+        reason="no re-pull path for age $age$( [[ "$(jq -r '.historical' <<< "$s")" == "no" ]] && echo " (source cannot re-pull a past period)")"
+        dstate_update "$name" '.gaps[$p].need_operator = true | .gaps[$p].reason = $r' --arg p "$p" --arg r "$reason" ;;
+    esac
+  done < <(jq -r '.gaps | to_entries[] | select(.value.state == "OPEN") | .key' <<< "$st" | sort)
+
+  # 3. Fire each chosen method once for all of its gaps.
+  local idx m label from to rc ps
+  while IFS= read -r idx; do
+    [[ -n "$idx" ]] || continue
+    ps=$(printf '%s\n' "${groups[@]}" | awk -F'\t' -v i="$idx" '$1 == i {print $2}' | sort)
+    from=$(head -1 <<< "$ps"); to=$(tail -1 <<< "$ps")
+    m=$(jq -c --argjson i "$idx" '.repull[$i]' <<< "$s"); label=$(_method_label "$m")
+    rc=0; _fire "$cfg" "$s" "$idx" "$from" "$to" || rc=$?
+    local pj va
+    pj=$(jq -R . <<< "$ps" | jq -sc .)
+    va=$(( now + $(jq -r '.verify_after_mins // 30' <<< "$m") * 60 ))
+    if (( rc == 0 )); then
+      dstate_update "$name" 'reduce $ps[] as $p (.; .gaps[$p].tries_today += 1 | .gaps[$p].tries_day = $d
+          | .gaps[$p].last_try = {at: ($n|tonumber), method: $m, label: $l, rc: 0} | .gaps[$p].verify_at = ($va|tonumber))' \
+        --argjson ps "$pj" --arg d "$today" --arg n "$now" --arg m "$(jq -r .method <<< "$m")" --arg l "$label" --arg va "$va"
+      # shellcheck disable=SC2046  # one period per word
+      data_gap_transition "$name" REPULLING "re-pull $(_dates_label $(tr '\n' ' ' <<< "$ps")) via $label; verify $(TZ=$JOBS_TZ date -r "$va" +%H:%M)" $(tr '\n' ' ' <<< "$ps")
+      _drepull_log "$name: fired $label for $from..$to (rows before: $(jq -r --argjson ps "$pj" '[.gaps | to_entries[] | select(.key as $k | $ps | index($k)) | "\(.key)=\(.value.rows_now)"] | join(" ")' "$(_dstate_file "$name")"))"
+    else
+      dstate_update "$name" 'reduce $ps[] as $p (.; .gaps[$p].tries_today += 1 | .gaps[$p].tries_day = $d | .gaps[$p].failed_tries += 1
+          | .gaps[$p].last_try = {at: ($n|tonumber), method: $m, label: $l, rc: ($rc|tonumber)}) | .last_action = $a' \
+        --argjson ps "$pj" --arg d "$today" --arg n "$now" --arg m "$(jq -r .method <<< "$m")" --arg l "$label" --arg rc "$rc" \
+        --arg a "re-pull trigger failed (rc $rc): $label"
+      _dlog "$name: trigger failed rc=$rc $label"
+    fi
+  done < <(printf '%s\n' "${groups[@]+"${groups[@]}"}" | cut -f1 | grep . | sort -un)
+
+  [[ -n "$waits" ]] && (( ${#groups[@]} == 0 )) && dstate_update "$name" '.last_action = $a' --arg a "waiting: ${waits%; }"
+
+  # 4. Gaps no re-pull can close: the data operator decides (fix build or one question).
+  if (( ${#handoff[@]} > 0 )) && declare -F _data_spawn_operator > /dev/null; then
+    _data_spawn_operator "$name"
+  fi
+  return 0
+}
+
 # data_evaluate <config> <series>: one series per tick: detect (counts -> OPEN / CLOSED), then act on open gaps.
 data_evaluate() {
   local cfg="$1" name="$2"
