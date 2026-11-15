@@ -1,0 +1,20 @@
+amz-tracking-offsite	amazon_tracking_daily.date 2026-10-15..2026-11-13	periods=30	min..max=21..41	median=27	floor=13	50% of median 27
+amz-tracking-onsite	amazon_tracking_daily.date 2026-10-15..2026-11-13	periods=30	min..max=2..2	median=2	floor=2	structural (all 30 periods = 2)
+amz-bounties	amazon_bounties_daily.date 2026-10-15..2026-11-13	periods=6	min..max=1..2	median=1	floor=1	50% of median 1
+amz-creator-connections	amazon_creator_connections_daily.date 2026-10-14..2026-11-12	periods=30	min..max=1..88	median=7	floor=3	50% of median 7
+amz-sponsored-products	amazon_sponsored_products_daily.date 2026-10-14..2026-11-12	periods=30	min..max=49..110	median=77	floor=38	50% of median 77
+amz-connect-summary	amazon_connect_summary_daily.date 2026-10-15..2026-11-13	periods=30	min..max=2..2	median=2	floor=2	structural (all 30 periods = 2)
+markable-spend	markable_spend_daily.report_date 2026-10-15..2026-11-13	periods=30	min..max=1..1	median=1	floor=1	structural (all 30 periods = 1)
+meta-daily-metrics	meta_daily_metrics.date 2026-10-15..2026-11-13	periods=30	min..max=3..9	median=3	floor=1	50% of median 3
+st-showings-daily	pulse_showings_daily.obs_date 2026-10-15..2026-11-13	periods=30	min..max=1..1	median=1	floor=1	structural (all 30 periods = 1)
+bb-showings-daily	pulse_bb_showings_daily.obs_date 2026-10-09..2026-11-08	periods=31	min..max=19..21	median=21	floor=10	50% of median 21
+st-showings-forward	pulse_showings_forward.snapshot_date 2026-10-19..2026-11-14	periods=27	min..max=4..4	median=4	floor=4	structural (all 27 periods = 4)
+pulse-daily-snapshots	pulse_daily_snapshots.snapshot_date 2026-10-15..2026-11-13	periods=30	min..max=1..1	median=1	floor=1	structural (all 30 periods = 1)
+pulse-odds-snapshots	pulse_odds_snapshots.snapshot_date 2026-10-19..2026-11-14	periods=27	min..max=43..43	median=43	floor=43	structural (all 27 periods = 43)
+pulse-events-refresh	pulse_events_refresh_runs.ran_at 2026-10-19..2026-11-15	periods=27	min..max=1..1	median=1	floor=1	structural (all 27 periods = 1)
+pulse-weekly-stats	pulse_weekly_stats.year_week 202638..202645	periods=8	min..max=1..1	median=1	floor=1	structural (all 8 periods = 1)
+pulse-signal-scores	pulse_signal_scores.year_week 202638..202645	periods=8	min..max=515..534	median=528	floor=264	50% of median 528
+pulse-market-health	pulse_market_health_weekly.year_week 202638..202645	periods=8	min..max=517..536	median=529	floor=264	50% of median 529
+tma-cohort-showings	recap_cohort_showings.year_week 202638..202645	periods=8	min..max=456..586	median=512	floor=256	50% of median 512
+pulse-showings-weekly	pulse_showings_weekly.year_week 202638..202645	periods=8	min..max=1..1	median=1	floor=1	structural (all 8 periods = 1)
+curb-inquiry-results	curb_inquiry_results.week_date 2026-09-14..2026-11-09	periods=9	min..max=1..2	median=2	floor=1	50% of median 2

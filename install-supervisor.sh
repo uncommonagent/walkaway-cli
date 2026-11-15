@@ -4,6 +4,7 @@
 #   ./install-supervisor.sh              install + load, adopt running builds, first tick
 #   ./install-supervisor.sh --uninstall  unload + remove (watchers resume their own ntfy pings)
 #   ./install-supervisor.sh --jobs-on    start watching the scheduled jobs in jobs.yaml (--jobs-off stops)
+#   ./install-supervisor.sh --data-on    start watching data/series.yaml for gaps + re-pulls (--data-off stops)
 #
 # Drills: WALKAWAY_SUPERVISOR_LABEL, WALKAWAY_HOME, WALKAWAY_LAUNCH_LOG_GLOB and WALKAWAY_EXTRA_ENV_XML
 # (<key>/<string> pairs for the agent's environment) point a second agent at a scratch world.
@@ -31,9 +32,21 @@ if [[ "${1:-}" == "--jobs-off" ]]; then
   exit 0
 fi
 
+# Data-series gap watching (data/series.yaml) is a flag file too.
+if [[ "${1:-}" == "--data-on" ]]; then
+  mkdir -p "$WALKAWAY_HOME"; touch "${WALKAWAY_HOME}/data.enabled"
+  echo "Data watching ON (${WALKAWAY_HOME}/data.enabled); next supervisor tick checks data/series.yaml for gaps and re-pulls them."
+  exit 0
+fi
+if [[ "${1:-}" == "--data-off" ]]; then
+  rm -f "${WALKAWAY_HOME}/data.enabled"
+  echo "Data watching OFF."
+  exit 0
+fi
+
 if [[ "${1:-}" == "--uninstall" ]]; then
   launchctl bootout "$DOMAIN/$LABEL" 2>/dev/null || true
-  rm -f "$PLIST" "${WALKAWAY_HOME}/supervisor.enabled" "${WALKAWAY_HOME}/jobs.enabled"
+  rm -f "$PLIST" "${WALKAWAY_HOME}/supervisor.enabled" "${WALKAWAY_HOME}/jobs.enabled" "${WALKAWAY_HOME}/data.enabled"
   echo "Supervisor unloaded and removed."
   exit 0
 fi

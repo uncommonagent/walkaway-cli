@@ -1,0 +1,87 @@
+{
+  "series": "bb-showings-daily",
+  "gaps": {
+    "2026-11-09": {
+      "state": "ESCALATED",
+      "status": "missing",
+      "opened_at": 1794764116,
+      "rows_before": 0,
+      "rows_now": 0,
+      "failed_tries": 0,
+      "tries_today": 0,
+      "tries_day": "2026-11-15",
+      "since": 1794764169,
+      "need_operator": true,
+      "reason": "no re-pull path for age 6"
+    },
+    "2026-11-10": {
+      "state": "ESCALATED",
+      "status": "missing",
+      "opened_at": 1794764116,
+      "rows_before": 0,
+      "rows_now": 0,
+      "failed_tries": 0,
+      "tries_today": 0,
+      "tries_day": "2026-11-15",
+      "since": 1794764169,
+      "need_operator": true,
+      "reason": "no re-pull path for age 5"
+    },
+    "2026-11-11": {
+      "state": "ESCALATED",
+      "status": "missing",
+      "opened_at": 1794764116,
+      "rows_before": 0,
+      "rows_now": 0,
+      "failed_tries": 0,
+      "tries_today": 0,
+      "tries_day": "2026-11-15",
+      "since": 1794764169,
+      "need_operator": true,
+      "reason": "no re-pull path for age 4"
+    },
+    "2026-11-12": {
+      "state": "ESCALATED",
+      "status": "missing",
+      "opened_at": 1794764116,
+      "rows_before": 0,
+      "rows_now": 0,
+      "failed_tries": 0,
+      "tries_today": 0,
+      "tries_day": "2026-11-15",
+      "since": 1794764169,
+      "need_operator": true,
+      "reason": "no re-pull path for age 3"
+    },
+    "2026-11-13": {
+      "state": "ESCALATED",
+      "status": "missing",
+      "opened_at": 1794764116,
+      "rows_before": 0,
+      "rows_now": 0,
+      "failed_tries": 0,
+      "tries_today": 0,
+      "tries_day": "2026-11-15",
+      "since": 1794764169,
+      "need_operator": true,
+      "reason": "no re-pull path for age 2"
+    }
+  },
+  "ok_periods": [
+    "2026-11-01",
+    "2026-11-02",
+    "2026-11-03",
+    "2026-11-04",
+    "2026-11-05",
+    "2026-11-06",
+    "2026-11-07",
+    "2026-11-08"
+  ],
+  "checked_at": 1794764905,
+  "error_ticks": 0,
+  "last_action": "On the Mini, what does the extension popup's BrokerBay status say? If it says BB login needs attention, is BrokerBay logged out in Chrome and can you sign it back in?",
+  "last_complete": "2026-11-08",
+  "full_scan_date": "2026-11-15",
+  "operator_gaps": "[\"2026-11-09\",\"2026-11-10\",\"2026-11-11\",\"2026-11-12\",\"2026-11-13\"]",
+  "incident": "/Users/jimross/.walkaway-cli/data-fixes/bb-showings-daily-2026-11-15/handoff/job-incident-bb-showings-daily-2026-11-15.md"
+}

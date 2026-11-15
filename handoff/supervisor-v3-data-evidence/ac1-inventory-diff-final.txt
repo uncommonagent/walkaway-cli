@@ -1,0 +1,2 @@
+# AC1 inventory diff on the final yaml (2026-11-15 13:48 EST): empty = 0 differences
+rc=0 ids=49 yaml=49 watched=21

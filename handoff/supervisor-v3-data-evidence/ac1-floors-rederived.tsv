@@ -1,0 +1,22 @@
+SERIES	PERIODS	MIN..MAX	MEDIAN	FORMULA	YAML	MATCH
+amz-tracking-offsite	30	21..41	27	13	13	yes
+amz-tracking-onsite	30	2..2	2	2	2	yes
+amz-creator-connections	30	1..88	8	4	3	differs: Phase 0 window (see floor_basis)
+amz-sponsored-products	30	52..110	79	39	38	differs: Phase 0 window (see floor_basis)
+amz-connect-summary	30	2..2	2	2	2	yes
+markable-spend	30	1..1	1	1	1	yes
+meta-daily-metrics	30	3..9	3	1	1	yes
+st-showings-daily	30	1..1	1	1	1	yes
+bb-showings-daily	25	21..21	21	21	10	differs: Phase 0 window (see floor_basis)
+st-showings-forward	27	4..4	4	4	4	yes
+pulse-daily-snapshots	30	1..1	1	1	1	yes
+pulse-odds-snapshots	28	43..43	43	43	22	differs: Phase 0 window (see floor_basis)
+pulse-events-refresh	28	1..1	1	1	1	yes
+pulse-weekly-stats	8	1..1	1	1	1	yes
+pulse-signal-scores	8	515..534	528	264	264	yes
+pulse-market-health	8	517..536	529	264	264	yes
+tma-cohort-showings	8	456..586	512	256	256	yes
+pulse-showings-weekly	8	1..1	1	1	1	yes
+recap-reports	8	28..33	30	15	15	yes
+curb-inquiry-results	8	1..2	2	1	1	yes
+pulse-member-snapshots	3	10082..10161	10131	5065	5065	yes

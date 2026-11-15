@@ -1,0 +1,6 @@
+[2026-11-15 13:13:56] data-operator diagnose drill-lost
+[2026-11-15 13:13:57] data: drill-lost: 2026-11-16 -> ESCALATED - drill-lost lost 2026-11-16 (0/4 rows): the source cannot re-pull a past day. Accept the loss, or fix the pull so it stops missing days?
+[2026-11-15 13:14:07] data-operator diagnose drill-nopath
+[2026-11-15 13:14:44] data: drill-nopath: 2026-11-12 -> FIXING - 2026-11-12: cause: scripts/pull.sh can only pull yesterday; fix build fix-data-drill-nopath-20261118 queued behind drill-busy in pull-drill
+[2026-11-15 13:14:50] data-operator progress drill-nopath
+[2026-11-15 13:14:50] data: drill-nopath: fix fix-data-drill-nopath-20261118 merged; 1 gap(s) back to OPEN for the post-fix re-pull

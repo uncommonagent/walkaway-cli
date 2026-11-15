@@ -7,7 +7,9 @@
 #
 # States: RUNNING, STALLED, STOPPED, DIED, DONE, MERGED, ESCALATED. Every state change sends exactly one
 # ntfy line "<feature>: <STATE> - <action taken>". While $WALKAWAY_HOME/jobs.enabled exists, each tick also
-# watches the scheduled jobs in jobs.yaml (lib/jobs.sh tick; job lines read "job <name>: <STATE> - ..."). Judgment calls (failure triage, merge gate) run as a
+# watches the scheduled jobs in jobs.yaml (lib/jobs.sh tick; job lines read "job <name>: <STATE> - ..."). While
+# $WALKAWAY_HOME/data.enabled exists, it also watches every dated data series in data/series.yaml for gaps and
+# re-pulls them (lib/data.sh tick; lines read "data <series>: <STATE> - ..."). Judgment calls (failure triage, merge gate) run as a
 # detached operator job (operator.sh) so one slow gate never blocks the 2-minute tick for other builds.
 
 set -uo pipefail
@@ -300,6 +302,11 @@ supervisor_heartbeat() {
     jl=$(bash "${SUP_DIR}/jobs.sh" heartbeat 2>/dev/null)
     [[ -n "$jl" ]] && { lines+="$jl"$'\n'; any=1; }
   fi
+  # Data series: open gaps only (one line per series), and they alone justify the heartbeat.
+  if [[ -f "${WALKAWAY_HOME}/data.enabled" ]]; then
+    jl=$(bash "${SUP_DIR}/data.sh" heartbeat 2>/dev/null)
+    [[ -n "$jl" ]] && { lines+="$jl"$'\n'; any=1; }
+  fi
   (( any )) || return 0
   notify_line "${lines%$'\n'}"
 }
@@ -334,6 +341,10 @@ supervisor_tick() {
   # Scheduled-job watching (jobs.yaml) runs while $WALKAWAY_HOME/jobs.enabled exists.
   if [[ -f "${WALKAWAY_HOME}/jobs.enabled" ]]; then
     bash "${SUP_DIR}/jobs.sh" tick || _log "jobs tick error"
+  fi
+  # Data-series gap watching (data/series.yaml) runs while $WALKAWAY_HOME/data.enabled exists.
+  if [[ -f "${WALKAWAY_HOME}/data.enabled" ]]; then
+    bash "${SUP_DIR}/data.sh" tick || _log "data tick error"
   fi
   supervisor_heartbeat
   date +%s > "${SUP_STATE_DIR}/supervisor-last-tick"

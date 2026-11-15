@@ -1,0 +1,21 @@
+supervisor last tick: 2026-11-15 13:14:55 EST
+FEATURE                         REPO        STATE    AGE  IN-STATE  LAST ACTION
+drill-busy                      pull-drill  RUNNING  1m   1m        builder pid 88804, active 0m ago
+fix-data-drill-nopath-20261118  pull-drill  MERGED   0m   0m        drill: simulated merge
+
+JOBS (2026-11-15, job watching OFF)
+JOB                TODAY      LAST OK  LAST ACTION
+bf-daily           PENDING    -        -
+cc-optin-am        PENDING    -        -
+cc-optin-pm        disabled   -        -
+spc                PENDING    -        -
+extension-reports  PENDING    -        -
+showingtime        PENDING    -        -
+realtea-generate   off today  -        -
+realtea-publish    off today  -        -
+
+DATA (2026-11-18, data watching on)
+SERIES        LAST COMPLETE  OPEN GAPS        LAST ACTION
+drill-repull  2026-11-17     -                2026-11-17 rows 0 -> 12 (floor 10; via command: /Users/jimross/Projects/walkaway-cli/tests/drill/wor
+drill-nopath  2026-11-17     -                2026-11-12 rows 0 -> 12 (floor 10; via command (fix hook): bash /Users/jimross/Projects/walkaway-cli
+drill-lost    2026-11-18     11-16 ESCALATED  drill-lost lost 2026-11-16 (0/4 rows): the source cannot re-pull a past day. Accept the loss, or fix

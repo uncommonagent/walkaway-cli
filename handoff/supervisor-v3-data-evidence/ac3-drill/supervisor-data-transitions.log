@@ -1,0 +1,13 @@
+[2026-11-15 13:13:52] data: drill-repull: 2026-11-17 -> OPEN - 2026-11-17 missing (0/10 rows)
+[2026-11-15 13:13:53] data: drill-repull: 2026-11-17 -> REPULLING - re-pull 2026-11-17 via command: /Users/jimross/Projects/walkaway-cli/tests/drill/work-data/bin/land.sh drill-repull {from}; verify 13:00
+[2026-11-15 13:13:54] data: drill-nopath: 2026-11-12 -> OPEN - 2026-11-12 missing (0/10 rows)
+[2026-11-15 13:13:55] data: drill-nopath: 2026-11-12 -> REPULLING - re-pull 2026-11-12 via command: bash /Users/jimross/Projects/walkaway-cli/tests/drill/work-data/pull-drill/scripts/pull.sh; verify 13:00
+[2026-11-15 13:13:56] data: drill-lost: 2026-11-16 -> OPEN - 2026-11-16 missing (0/4 rows)
+[2026-11-15 13:13:56] data: drill-lost: 2026-11-16 -> data operator
+[2026-11-15 13:14:02] data: drill-repull: 2026-11-17 -> CLOSED - 2026-11-17 rows 0 -> 12 (floor 10; via command: /Users/jimross/Projects/walkaway-cli/tests/drill/work-data/bin/land.sh drill-repull {from})
+[2026-11-15 13:14:04] data: drill-nopath: 2026-11-12 try failed (rows below floor at verify)
+[2026-11-15 13:14:06] data: drill-nopath: 2026-11-12 -> REPULLING - re-pull 2026-11-12 via command: bash /Users/jimross/Projects/walkaway-cli/tests/drill/work-data/pull-drill/scripts/pull.sh; verify 13:31
+[2026-11-15 13:14:07] data: drill-nopath: 2026-11-12 try failed (rows below floor at verify)
+[2026-11-15 13:14:07] data: drill-nopath: 2026-11-12 -> data operator
+[2026-11-15 13:14:51] data: drill-nopath: 2026-11-12 -> REPULLING - re-pull 2026-11-12 via command (fix hook): bash /Users/jimross/Projects/walkaway-cli/tests/drill/work-data/pull-drill/scripts/pull.sh; verify 14:30
+[2026-11-15 13:14:53] data: drill-nopath: 2026-11-12 -> CLOSED - 2026-11-12 rows 0 -> 12 (floor 10; via command (fix hook): bash /Users/jimross/Projects/walkaway-cli/tests/drill/work-data/pull-drill/scripts/pull.sh)

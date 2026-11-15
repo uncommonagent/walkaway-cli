@@ -1,0 +1,192 @@
+{
+  "series": "bb-showings-daily",
+  "as_of": "2026-11-15 14:36 EST",
+  "checked_at": "2026-11-15T19:36:14Z",
+  "floor": 10,
+  "periods": [
+    {
+      "period": "2026-11-15",
+      "key": "2026-11-15",
+      "age": 0,
+      "ready_at": "2026-11-16T18:00:00Z",
+      "ready": false,
+      "count": null,
+      "status": "not_ready",
+      "query": "pulse_bb_showings_daily?select=obs_date&is_total=eq.true&obs_date=eq.2026-11-15"
+    },
+    {
+      "period": "2026-11-14",
+      "key": "2026-11-14",
+      "age": 1,
+      "ready_at": "2026-11-15T18:00:00Z",
+      "ready": true,
+      "count": 0,
+      "status": "missing",
+      "query": "pulse_bb_showings_daily?select=obs_date&is_total=eq.true&obs_date=eq.2026-11-14"
+    },
+    {
+      "period": "2026-11-13",
+      "key": "2026-11-13",
+      "age": 2,
+      "ready_at": "2026-11-14T18:00:00Z",
+      "ready": true,
+      "count": 0,
+      "status": "missing",
+      "query": "pulse_bb_showings_daily?select=obs_date&is_total=eq.true&obs_date=eq.2026-11-13"
+    },
+    {
+      "period": "2026-11-12",
+      "key": "2026-11-12",
+      "age": 3,
+      "ready_at": "2026-11-13T18:00:00Z",
+      "ready": true,
+      "count": 0,
+      "status": "missing",
+      "query": "pulse_bb_showings_daily?select=obs_date&is_total=eq.true&obs_date=eq.2026-11-12"
+    },
+    {
+      "period": "2026-11-11",
+      "key": "2026-11-11",
+      "age": 4,
+      "ready_at": "2026-11-12T18:00:00Z",
+      "ready": true,
+      "count": 0,
+      "status": "missing",
+      "query": "pulse_bb_showings_daily?select=obs_date&is_total=eq.true&obs_date=eq.2026-11-11"
+    },
+    {
+      "period": "2026-11-10",
+      "key": "2026-11-10",
+      "age": 5,
+      "ready_at": "2026-11-11T18:00:00Z",
+      "ready": true,
+      "count": 0,
+      "status": "missing",
+      "query": "pulse_bb_showings_daily?select=obs_date&is_total=eq.true&obs_date=eq.2026-11-10"
+    },
+    {
+      "period": "2026-11-09",
+      "key": "2026-11-09",
+      "age": 6,
+      "ready_at": "2026-11-10T18:00:00Z",
+      "ready": true,
+      "count": 0,
+      "status": "missing",
+      "query": "pulse_bb_showings_daily?select=obs_date&is_total=eq.true&obs_date=eq.2026-11-09"
+    },
+    {
+      "period": "2026-11-08",
+      "key": "2026-11-08",
+      "age": 7,
+      "ready_at": "2026-11-09T18:00:00Z",
+      "ready": true,
+      "count": 21,
+      "status": "ok",
+      "query": "pulse_bb_showings_daily?select=obs_date&is_total=eq.true&obs_date=eq.2026-11-08"
+    },
+    {
+      "period": "2026-11-07",
+      "key": "2026-11-07",
+      "age": 8,
+      "ready_at": "2026-11-08T18:00:00Z",
+      "ready": true,
+      "count": 21,
+      "status": "ok",
+      "query": "pulse_bb_showings_daily?select=obs_date&is_total=eq.true&obs_date=eq.2026-11-07"
+    },
+    {
+      "period": "2026-11-06",
+      "key": "2026-11-06",
+      "age": 9,
+      "ready_at": "2026-11-07T18:00:00Z",
+      "ready": true,
+      "count": 21,
+      "status": "ok",
+      "query": "pulse_bb_showings_daily?select=obs_date&is_total=eq.true&obs_date=eq.2026-11-06"
+    },
+    {
+      "period": "2026-11-05",
+      "key": "2026-11-05",
+      "age": 10,
+      "ready_at": "2026-11-06T18:00:00Z",
+      "ready": true,
+      "count": 21,
+      "status": "ok",
+      "query": "pulse_bb_showings_daily?select=obs_date&is_total=eq.true&obs_date=eq.2026-11-05"
+    },
+    {
+      "period": "2026-11-04",
+      "key": "2026-11-04",
+      "age": 11,
+      "ready_at": "2026-11-05T18:00:00Z",
+      "ready": true,
+      "count": 21,
+      "status": "ok",
+      "query": "pulse_bb_showings_daily?select=obs_date&is_total=eq.true&obs_date=eq.2026-11-04"
+    },
+    {
+      "period": "2026-11-03",
+      "key": "2026-11-03",
+      "age": 12,
+      "ready_at": "2026-11-04T18:00:00Z",
+      "ready": true,
+      "count": 21,
+      "status": "ok",
+      "query": "pulse_bb_showings_daily?select=obs_date&is_total=eq.true&obs_date=eq.2026-11-03"
+    },
+    {
+      "period": "2026-11-02",
+      "key": "2026-11-02",
+      "age": 13,
+      "ready_at": "2026-11-03T18:00:00Z",
+      "ready": true,
+      "count": 21,
+      "status": "ok",
+      "query": "pulse_bb_showings_daily?select=obs_date&is_total=eq.true&obs_date=eq.2026-11-02"
+    },
+    {
+      "period": "2026-11-01",
+      "key": "2026-11-01",
+      "age": 14,
+      "ready_at": "2026-11-02T18:00:00Z",
+      "ready": true,
+      "count": 21,
+      "status": "ok",
+      "query": "pulse_bb_showings_daily?select=obs_date&is_total=eq.true&obs_date=eq.2026-11-01"
+    }
+  ],
+  "gaps": [
+    {
+      "period": "2026-11-14",
+      "count": 0,
+      "status": "missing"
+    },
+    {
+      "period": "2026-11-13",
+      "count": 0,
+      "status": "missing"
+    },
+    {
+      "period": "2026-11-12",
+      "count": 0,
+      "status": "missing"
+    },
+    {
+      "period": "2026-11-11",
+      "count": 0,
+      "status": "missing"
+    },
+    {
+      "period": "2026-11-10",
+      "count": 0,
+      "status": "missing"
+    },
+    {
+      "period": "2026-11-09",
+      "count": 0,
+      "status": "missing"
+    }
+  ],
+  "errors": [],
+  "last_complete": "2026-11-08"
+}

@@ -1,0 +1,127 @@
+{
+  "defaults": {
+    "lookback_days": 14,
+    "lookback_weeks": 4,
+    "lookback_months": 2,
+    "max_tries_per_day": 2,
+    "verify_after_mins": 30
+  },
+  "vars": {},
+  "sources": {
+    "scratch": {
+      "env_file": "/dev/null",
+      "url_var": "X",
+      "key_var": "Y",
+      "app_url": "http://127.0.0.1:9",
+      "cron_secret_var": "Z"
+    }
+  },
+  "guards": {},
+  "series": [
+    {
+      "name": "drill-repull",
+      "title": "Drill: a series whose existing re-pull works",
+      "watch": true,
+      "owner_repo": "/Users/jimross/Projects/walkaway-cli/tests/drill/work-data/pull-drill",
+      "source": "scratch",
+      "table": "t_repull",
+      "key": {
+        "column": "d",
+        "type": "date"
+      },
+      "filters": "",
+      "cadence": "daily",
+      "lag_days": 1,
+      "ready_by": "12:00",
+      "floor": 10,
+      "floor_basis": "drill",
+      "historical": "yes",
+      "repull": [
+        {
+          "method": "command",
+          "ages": [
+            1,
+            2,
+            3
+          ],
+          "verify_after_mins": 30,
+          "command": "/Users/jimross/Projects/walkaway-cli/tests/drill/work-data/bin/land.sh drill-repull {from} {to} 12"
+        }
+      ]
+    },
+    {
+      "name": "drill-nopath",
+      "title": "Drill: daily showings pull (scripts/pull.sh fetches yesterday only)",
+      "watch": true,
+      "owner_repo": "/Users/jimross/Projects/walkaway-cli/tests/drill/work-data/pull-drill",
+      "source": "scratch",
+      "table": "daily_showings",
+      "key": {
+        "column": "obs_date",
+        "type": "date"
+      },
+      "filters": "",
+      "cadence": "daily",
+      "lag_days": 1,
+      "ready_by": "12:00",
+      "floor": 10,
+      "floor_basis": "drill",
+      "historical": "yes",
+      "repull": [
+        {
+          "method": "command",
+          "ages": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "verify_after_mins": 30,
+          "command": "bash /Users/jimross/Projects/walkaway-cli/tests/drill/work-data/pull-drill/scripts/pull.sh",
+          "note": "re-runs the scheduled pull: it fetches yesterday only"
+        },
+        {
+          "method": "command",
+          "requires_fix": true,
+          "ages": "all",
+          "verify_after_mins": 30,
+          "command": "bash /Users/jimross/Projects/walkaway-cli/tests/drill/work-data/pull-drill/scripts/pull.sh --from {from} --to {to}"
+        }
+      ],
+      "fix_hook": "scripts/pull.sh --from YYYY-MM-DD --to YYYY-MM-DD pulls exactly that inclusive date range through fetch_day (the existing fetch/upsert path); no arguments keeps today's behaviour (yesterday)"
+    },
+    {
+      "name": "drill-lost",
+      "title": "Drill: an as-of snapshot (cannot re-pull a past day)",
+      "watch": true,
+      "owner_repo": "/Users/jimross/Projects/walkaway-cli/tests/drill/work-data/pull-drill",
+      "source": "scratch",
+      "table": "t_snapshot",
+      "key": {
+        "column": "d",
+        "type": "date"
+      },
+      "filters": "",
+      "cadence": "daily",
+      "lag_days": 0,
+      "ready_by": "13:00",
+      "floor": 4,
+      "floor_basis": "drill",
+      "historical": "no",
+      "repull": [
+        {
+          "method": "command",
+          "ages": [
+            0
+          ],
+          "verify_after_mins": 30,
+          "command": "/Users/jimross/Projects/walkaway-cli/tests/drill/work-data/bin/land.sh drill-lost {from} {to} 4"
+        }
+      ]
+    }
+  ]
+}

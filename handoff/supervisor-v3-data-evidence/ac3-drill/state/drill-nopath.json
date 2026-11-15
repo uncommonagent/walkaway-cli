@@ -1,0 +1,58 @@
+{
+  "series": "drill-nopath",
+  "gaps": {
+    "2026-11-12": {
+      "state": "CLOSED",
+      "status": "missing",
+      "opened_at": 1795023051,
+      "rows_before": 0,
+      "rows_now": 12,
+      "counted_at": 1795028572,
+      "failed_tries": 0,
+      "tries_today": 1,
+      "tries_day": "2026-11-18",
+      "since": 1795028572,
+      "last_try": {
+        "at": 1795028449,
+        "method": "command",
+        "label": "command (fix hook): bash /Users/jimross/Projects/walkaway-cli/tests/drill/work-data/pull-drill/scripts/pull.sh",
+        "rc": 0
+      },
+      "verify_at": 1795030249,
+      "need_operator": false,
+      "reason": "re-pull failed twice (command: bash /Users/jimross/Projects/walkaway-cli/tests/drill/work-data/pull-drill/scripts/pull.sh)",
+      "post_fix": true,
+      "rows_after": 12,
+      "closed_at": 1795028572,
+      "closed_via": "command (fix hook): bash /Users/jimross/Projects/walkaway-cli/tests/drill/work-data/pull-drill/scripts/pull.sh"
+    }
+  },
+  "ok_periods": [
+    "2026-11-04",
+    "2026-11-05",
+    "2026-11-06",
+    "2026-11-07",
+    "2026-11-08",
+    "2026-11-09",
+    "2026-11-10",
+    "2026-11-11",
+    "2026-11-12",
+    "2026-11-13",
+    "2026-11-14",
+    "2026-11-15",
+    "2026-11-16",
+    "2026-11-17"
+  ],
+  "checked_at": 1795028694,
+  "error_ticks": 0,
+  "last_action": "2026-11-12 rows 0 -> 12 (floor 10; via command (fix hook): bash /Users/jimross/Projects/walkaway-cli/tests/drill/work-data/pull-drill/scripts/pull.sh)",
+  "last_complete": "2026-11-17",
+  "full_scan_date": "2026-11-18",
+  "operator_gaps": "[\"2026-11-12\"]",
+  "incident": "/Users/jimross/Projects/walkaway-cli/tests/drill/work-data/home/data-fixes/drill-nopath-2026-11-18/handoff/job-incident-drill-nopath-2026-11-18.md",
+  "fix_feature": "fix-data-drill-nopath-20261118",
+  "fix_plan": "/Users/jimross/Projects/walkaway-cli/tests/drill/work-data/home/data-fixes/drill-nopath-2026-11-18/handoff/build-plan-fix-data-drill-nopath-20261118.md",
+  "fix_date": "2026-11-18",
+  "fix_merged": true,
+  "hook_merged": true
+}

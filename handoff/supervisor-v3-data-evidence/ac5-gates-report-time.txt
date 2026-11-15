@@ -1,0 +1,12 @@
+# Gates at report time (2026-11-15 14:30 EST, HEAD 3649525, GNU bash, version 3.2.57(1)-release (arm64-apple-darwin26))
+shellcheck -S warning: rc=0
+tests/test-data-gaps.sh: Results: 38 passed, 0 failed
+tests/test-data-operator.sh: Results: 25 passed, 0 failed
+tests/test-data-repull.sh: Results: 92 passed, 0 failed
+tests/test-died-done-regression.sh: Results: 12 passed, 0 failed
+tests/test-job-operator.sh: Results: 37 passed, 0 failed
+tests/test-jobs-states.sh: Results: 38 passed, 0 failed
+tests/test-operator.sh: Results: 68 passed, 0 failed
+tests/test-parse-plan.sh: Results: 7 passed, 0 failed
+tests/test-supervisor-states.sh: Results: 18 passed, 0 failed
+total passed: 335

@@ -1,0 +1,34 @@
+[13:13:51] data drill start: topic jim-walkaway-data-drill-603a25b7, home /Users/jimross/Projects/walkaway-cli/tests/drill/work-data/home
+[13:13:51] drill-busy registered in /Users/jimross/Projects/walkaway-cli/tests/drill/work-data/pull-drill (pid 88804): holds the one-builder slot so the fix plan queues
+[13:13:51] supervisor tick @ 2026-11-18 12:30 ET (time travel)
+[13:13:56] PASS: drill-repull 11-17 OPEN -> re-pull fired (REPULLING)
+[13:13:56] PASS: drill-nopath 11-12 OPEN -> scheduled pull re-run (REPULLING)
+[13:14:01] drill-lost operator done after 10s
+[13:14:01] PASS: drill-lost 11-16: source cannot re-pull -> ESCALATED (lost)
+[13:14:01] supervisor tick @ 2026-11-18 12:32 ET (time travel)
+[13:14:03] PASS: drill-repull CLOSED rows 0 -> 12
+[13:14:03] PASS: drill-nopath still REPULLING inside its verify window
+[13:14:03] supervisor tick @ 2026-11-18 13:01 ET (time travel)
+[13:14:06] PASS: drill-nopath verify failed -> try 2 fired
+[13:14:06] supervisor tick @ 2026-11-18 13:32 ET (time travel)
+[13:14:49] drill-nopath operator done after 45s
+[13:14:49] drill-nopath decision: FIX BUILD fix-data-drill-nopath-20261118 (template v2 plan: /Users/jimross/Projects/walkaway-cli/tests/drill/work-data/home/data-fixes/drill-nopath-2026-11-18/handoff/build-plan-fix-data-drill-nopath-20261118.md)
+[13:14:49] PASS: incident written (gaps, cause, evidence, fresh counts)
+[13:14:49] PASS: drill-nopath FIXING: template-v2 fix plan queued behind drill-busy
+[13:14:49] PASS: fix plan not launched (no registry entry)
+[13:14:49] PASS: plan: template-v2 sections, owner repo, hook contract verbatim
+[13:14:49] simulated merge of fix-data-drill-nopath-20261118 (registry MERGED; scratch repo now has the --from/--to hook)
+[13:14:49] supervisor tick @ 2026-11-18 14:00 ET (time travel)
+[13:14:52] PASS: post-merge: the hook fired once for exactly 2026-11-12..2026-11-12
+[13:14:52] supervisor tick @ 2026-11-18 14:02 ET (time travel)
+[13:14:54] supervisor tick @ 2026-11-18 14:04 ET (time travel)
+[13:14:55] PASS: drill-nopath CLOSED rows 0 -> 12 via the fix hook
+[13:15:00] ntfy poll: 8 messages on jim-walkaway-data-drill-603a25b7; local sends: 8
+[13:15:00] PASS: ntfy poll == local send log (1:1)
+[13:15:00] polled transitions: drill-repull [OPEN CLOSED ] drill-nopath [OPEN FIXING CLOSED ] drill-lost [OPEN ESCALATED ]
+[13:15:00] PASS: drill-repull: OPEN, CLOSED - one ntfy each
+[13:15:00] PASS: drill-nopath: OPEN, FIXING, CLOSED - one ntfy each
+[13:15:00] PASS: drill-lost: OPEN, ESCALATED - one ntfy each
+[13:15:00] PASS: ESCALATED is priority high (ntfy 4) on the wire
+[13:15:00] PASS: REPULLING never pinged
+[13:15:01] data drill done: 18 passed, 0 failed (topic jim-walkaway-data-drill-603a25b7)

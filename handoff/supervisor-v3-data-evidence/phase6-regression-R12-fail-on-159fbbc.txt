@@ -1,0 +1,5 @@
+R12 a re-pull never fires a send: the ST URL trigger waits until today's Pulse brief row exists (real bb entry)
+  FAIL brief not sent yet -> no trigger, waiting with the reason
+  ok   brief sent -> the ST URL trigger fires for 11-17 (age 1)
+
+Results: 30 passed, 3 failed

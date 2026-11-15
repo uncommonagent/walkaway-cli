@@ -31,7 +31,7 @@ walkaway — kick off a walkaway build session
 
 USAGE
   walkaway [OPTIONS] <build-plan-path>
-  walkaway status          One table of every registered build (from the registry) + the JOBS table
+  walkaway status          One table of every registered build (from the registry) + the JOBS and DATA tables
 
 OPTIONS
   --worktree    Create a git worktree for a parallel build. Copies .env.local,
@@ -69,6 +69,7 @@ HELP
 if [[ "${1:-}" == "status" ]]; then
   registry_status
   bash "${SCRIPT_DIR}/lib/jobs.sh" status
+  bash "${SCRIPT_DIR}/lib/data.sh" status
   exit 0
 fi
 

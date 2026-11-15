@@ -1,0 +1,49 @@
+supervisor last tick: 2026-11-15 14:35:41 EST
+FEATURE                 REPO                 STATE      AGE    IN-STATE  LAST ACTION
+bf-daily-retry-fix      audrey-ops-platform  ESCALATED  3h0m   1h56m     waiting for Jim
+bf-deals-ingest-fix     audrey-ops-platform  MERGED     2d5h   2d5h      PR #28 merged by Claude-in-chat after manual gate (escalation was a supervisor false-DIED race)
+bf-pick-mode            audrey-ops-platform  MERGED     1d23h  1d22h     PR #31 squash-merged by merge gate; queue empty
+bf-pool-brandcap        audrey-ops-platform  MERGED     1d2h   1d1h      PR #33 squash-merged by merge gate; queue empty
+bf-pool-supply          audrey-ops-platform  MERGED     1d21h  1d20h     PR #32 squash-merged by merge gate; queue empty
+bf-scoring-credibility  audrey-ops-platform  MERGED     2d0h   1d23h     PR #30 squash-merged by merge gate; queue empty
+bf-taste-scoring        audrey-ops-platform  MERGED     2d1h   2d0h      PR #29 squash-merged by merge gate; queue empty
+build-supervisor        walkaway-cli         MERGED     2d22h  2d22h     PR #1 squash-merged by merge gate; queue empty
+live-apply-fix          audrey-ops-platform  MERGED     23h8m  21h18m    PR #34 merged by Claude-in-chat on Jim approval (pin waived; Audrey pins untouched)
+new-lists-grid          audrey-ops-platform  MERGED     2d22h  2d21h     PR #27 squash-merged by merge gate; queue empty
+supervisor-v2-jobs      walkaway-cli         MERGED     2d2h   2d1h      PR #2 squash-merged by merge gate; queue empty
+supervisor-v3-data      walkaway-cli         RUNNING    7m     5m        builder pid 59354, active 1m ago
+
+JOBS (2026-11-15, job watching on)
+JOB                TODAY      LAST OK      LAST ACTION
+bf-daily           ESCALATED  11-13 12:14  still retrying: 11 failed attempt(s); latest 2026-11-15T17:36:52Z: BF lists daily 11/15: FAILED | deals 32897 
+cc-optin-am        OK         11-15 09:44  DONE 2026-11-15T14:43:41Z
+cc-optin-pm        disabled   -            -
+spc                OK         11-15 09:48  ACCEPTED 164/164 at 2026-11-15T14:47:42Z
+extension-reports  OK         11-15 14:35  10 report types succeeded within 26 h, none in error
+showingtime        OK         11-15 06:03  2026-11-14 total showings=3537 (first seen 2026-11-15T11:03:43Z); agent decision=none
+realtea-generate   off today  -            not scheduled today (mon)
+realtea-publish    off today  -            not scheduled today (mon)
+
+DATA (2026-11-15, data watching on)
+SERIES                   LAST COMPLETE  OPEN GAPS                                                                                             LAST ACTION
+amz-tracking-offsite     2026-11-14     -                                                                                                     no gaps (checked 14:35)
+amz-tracking-onsite      2026-11-14     -                                                                                                     no gaps (checked 14:35)
+amz-creator-connections  2026-11-13     -                                                                                                     no gaps (checked 14:35)
+amz-sponsored-products   2026-11-13     -                                                                                                     no gaps (checked 14:35)
+amz-connect-summary      2026-11-14     -                                                                                                     no gaps (checked 14:35)
+markable-spend           2026-11-14     -                                                                                                     no gaps (checked 14:35)
+meta-daily-metrics       2026-11-14     -                                                                                                     no gaps (checked 14:35)
+st-showings-daily        2026-11-14     -                                                                                                     no gaps (checked 14:35)
+bb-showings-daily        2026-11-08     11-09 ESCALATED, 11-10 ESCALATED, 11-11 ESCALATED, 11-12 ESCALATED, 11-13 ESCALATED, 11-14 ESCALATED  On the Mini's Chrome, is edge.brokerbay.com signed in? (BB has written no rows since 11-10. If it's 
+st-showings-forward      2026-11-15     -                                                                                                     no gaps (checked 14:35)
+pulse-daily-snapshots    2026-11-14     -                                                                                                     no gaps (checked 14:35)
+pulse-odds-snapshots     2026-11-15     -                                                                                                     no gaps (checked 14:35)
+pulse-events-refresh     2026-11-15     -                                                                                                     no gaps (checked 14:35)
+pulse-weekly-stats       2026-11-02     -                                                                                                     no gaps (checked 14:35)
+pulse-signal-scores      2026-11-02     -                                                                                                     no gaps (checked 14:35)
+pulse-market-health      2026-11-02     -                                                                                                     no gaps (checked 14:35)
+tma-cohort-showings      2026-11-02     -                                                                                                     no gaps (checked 14:35)
+pulse-showings-weekly    2026-11-02     -                                                                                                     no gaps (checked 14:35)
+recap-reports            2026-11-09     -                                                                                                     no gaps (checked 14:35)
+curb-inquiry-results     2026-11-09     -                                                                                                     no gaps (checked 14:35)
+pulse-member-snapshots   2026-11-01     -                                                                                                     no gaps (checked 14:35)

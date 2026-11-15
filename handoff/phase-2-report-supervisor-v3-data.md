@@ -1,0 +1,28 @@
+# Phase 2 report - supervisor-v3-data (gap detector + gap states)
+
+- **Gap detector** (`lib/data.sh` data_detect / data_evaluate / data_tick):
+  - Covers every watched series over its lookback: 14 days, 4 weeks or 2 months.
+  - A period is judged only after `anchor + lag_days` at `ready_by`, so the series' own retry window is respected.
+  - A count below the floor is a gap: `missing` at 0 rows, `short` between 0 and the floor.
+  - Weekday cadence (`days:`) skips unscheduled weekdays entirely.
+- **Per-gap state** in `$WALKAWAY_HOME/data/state/<series>.json`:
+  - The plan's five states: OPEN / REPULLING / CLOSED / FIXING / ESCALATED.
+  - Each gap records rows_before, rows_now, rows_after, closed_via, failed_tries, tries_today and tries_day. Phase 2 drives OPEN and CLOSED; Phase 3 adds REPULLING; Phase 4 adds FIXING and ESCALATED.
+- **ntfy:** one line per series per tick for its newly OPEN gaps.
+  - Consecutive dates show as a range, e.g. `data bb-showings-daily: OPEN - 2026-11-09..11-14 missing (0/10 rows)`.
+  - CLOSED gets one line with rows before -> after.
+  - REPULLING is silent. Repeat ticks never re-notify.
+- **Cost:** complete periods are cached and re-counted once per local day (full scan, which catches rows deleted later). Other ticks count only the newly ready periods and the open gaps: one GET each.
+  - A tracked gap that ages out of the lookback is still counted (`_extra_periods`).
+- **Count errors:** never judged as gaps. 15 consecutive error ticks (`WALKAWAY_DATA_ERROR_TICKS`) send one ESCALATED line at priority high.
+- **CLI:** `data.sh tick | evaluate <s> | status | heartbeat | state <s>`.
+  - DATA table: SERIES, LAST COMPLETE, OPEN GAPS, LAST ACTION.
+  - Heartbeat: one line per series with open gaps.
+  - Not yet called by the supervisor; the hook lands in Phase 4, gated.
+- **tests/test-data-gaps.sh (new, 32/32):**
+  - D1 missing -> OPEN with one grouped ntfy; D2 short / exactly at the floor; D3 lag + ready_by; D4 weekday cadence.
+  - D5 CLOSED with before/after and one ntfy; D6 cache + daily full scan (14 -> 1 -> 14 counts); D7 ISO yearweek with lag 7; D8 errors escalate once.
+  - D9 runs the REAL series.yaml with real incident counts: odds 10-15..10-18 outage, cc 10-22 short 1/3, bb 11-09..11-14.
+- **Weekday support:** `days:` (jobs.yaml convention) was added. No real series needs it: Phase 0 found every pull runs daily, weekends included.
+- Gates: shellcheck 0; 212/212 (data-gaps 32, parse 7, states 18, v2-AC1 12, jobs-states 38, job-operator 37, operator 68).
+- Files: lib/data.sh, data/series.yaml (days doc), tests/test-data-gaps.sh, tests/fixtures/data/series-test.yaml.

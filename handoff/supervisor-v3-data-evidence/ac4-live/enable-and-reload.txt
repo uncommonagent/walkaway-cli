@@ -1,0 +1,9 @@
+enable at 2026-11-15 12:35:05 EST
+Data watching ON (/Users/jimross/.walkaway-cli/data.enabled); next supervisor tick checks data/series.yaml for gaps and re-pulls them.
+reloaded at 12:35:07: bootout + bootstrap + enable gui/501/com.jimross.walkaway-supervisor (plist unchanged: lib/supervisor.sh tick every 120 s, RunAtLoad)
+	state = running
+	pid = 83878
+	last exit code = (never exited)
+		state = active
+		state = active
+	run interval = 120 seconds

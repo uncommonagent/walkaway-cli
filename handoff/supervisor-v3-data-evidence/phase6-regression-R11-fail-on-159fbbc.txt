@@ -1,0 +1,5 @@
+R11 http trigger (Phase 6 live finding): a route that never answers in time = delivered; no connection = failed try
+  FAIL slow route past the client timeout (curl exit 28) -> rc 0 (delivered; verify decides)
+  FAIL connection refused (HTTP 000, curl exit 7) -> rc 1 (a failed try, not a fired re-pull)
+
+Results: 29 passed, 2 failed
