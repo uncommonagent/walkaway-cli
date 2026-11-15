@@ -463,8 +463,10 @@ data_detect() {
       .last_complete = ([(.last_complete // ""), $lc] | max | if . == "" then null else . end)
     | (if $full == "1" then .full_scan_date = $t else . end)
     | .ok_periods = [(.ok_periods // [])[] | select(. >= $o)]
-    | .gaps = (.gaps | with_entries(select(.value.state != "CLOSED" or .key >= $o)))' \
-    --arg lc "$(jq -r '.last_complete // ""' <<< "$res")" --arg full "$full" --arg t "$today" --arg o "$oldest"
+    | .gaps = (.gaps | with_entries(select(.value.state != "CLOSED" or .key >= $o)))
+    | if ([.gaps[] | select(.state != "CLOSED")] | length) == 0 and ((.last_action // "") == "" or ((.last_action // "") | startswith("no gaps")))
+      then .last_action = "no gaps (checked " + $hm + ")" else . end' \
+    --arg lc "$(jq -r '.last_complete // ""' <<< "$res")" --arg full "$full" --arg t "$today" --arg o "$oldest" --arg hm "$(_hhmm_now)"
 }
 
 # ── re-pull (plan item 2) ────────────────────────────────────────────────────
