@@ -1,0 +1,383 @@
+{
+  "series": {
+    "name": "bb-showings-daily",
+    "title": "BrokerBay daily showings (extension, after ST)",
+    "watch": true,
+    "owner_repo": "~/Projects/Throughline/throughline-app",
+    "source": "throughline",
+    "table": "pulse_bb_showings_daily",
+    "key": {
+      "column": "obs_date",
+      "type": "date"
+    },
+    "filters": "is_total=eq.true",
+    "cadence": "daily",
+    "lag_days": 1,
+    "ready_by": "13:00",
+    "floor": 10,
+    "floor_basis": "50% of 30-day median 21 (range 19..21)",
+    "historical": "yes",
+    "repull": [
+      {
+        "method": "command",
+        "ages": [
+          1
+        ],
+        "verify_after_mins": 45,
+        "guard": "st_brief_sent",
+        "command": "open -g -a \"Google Chrome\" \"https://throughlinepro.com/#tl-ext-run-daily\"",
+        "note": "the ST URL trigger sets setBbPending(true) (background.js:95): BB pulls yesterday after ST"
+      },
+      {
+        "method": "command",
+        "requires_fix": true,
+        "ages": "all",
+        "verify_after_mins": 45,
+        "guard": "st_brief_sent",
+        "command": "open -g -a \"Google Chrome\" \"https://throughlinepro.com/#tl-ext-repull=bb&from={from}&to={to}\""
+      }
+    ],
+    "fix_hook": "Throughline extension URL trigger: https://throughlinepro.com/#tl-ext-repull=bb&from=YYYY-MM-DD&to=YYYY-MM-DD runs START_BB for each date (pullTableauDaily date, ET dates), then closes the tab",
+    "lookback_days": 14,
+    "lookback_weeks": 4,
+    "lookback_months": 2,
+    "max_tries_per_day": 2
+  },
+  "state": {
+    "series": "bb-showings-daily",
+    "gaps": {
+      "2026-11-09": {
+        "state": "ESCALATED",
+        "status": "missing",
+        "opened_at": 1794764116,
+        "rows_before": 0,
+        "rows_now": 0,
+        "failed_tries": 0,
+        "tries_today": 0,
+        "tries_day": "2026-11-15",
+        "since": 1794764169,
+        "need_operator": true,
+        "reason": "no re-pull path for age 6",
+        "counted_at": 1794771205
+      },
+      "2026-11-10": {
+        "state": "ESCALATED",
+        "status": "missing",
+        "opened_at": 1794764116,
+        "rows_before": 0,
+        "rows_now": 0,
+        "failed_tries": 0,
+        "tries_today": 0,
+        "tries_day": "2026-11-15",
+        "since": 1794764169,
+        "need_operator": true,
+        "reason": "no re-pull path for age 5",
+        "counted_at": 1794771205
+      },
+      "2026-11-11": {
+        "state": "ESCALATED",
+        "status": "missing",
+        "opened_at": 1794764116,
+        "rows_before": 0,
+        "rows_now": 0,
+        "failed_tries": 0,
+        "tries_today": 0,
+        "tries_day": "2026-11-15",
+        "since": 1794764169,
+        "need_operator": true,
+        "reason": "no re-pull path for age 4",
+        "counted_at": 1794771205
+      },
+      "2026-11-12": {
+        "state": "ESCALATED",
+        "status": "missing",
+        "opened_at": 1794764116,
+        "rows_before": 0,
+        "rows_now": 0,
+        "failed_tries": 0,
+        "tries_today": 0,
+        "tries_day": "2026-11-15",
+        "since": 1794764169,
+        "need_operator": true,
+        "reason": "no re-pull path for age 3",
+        "counted_at": 1794771205
+      },
+      "2026-11-13": {
+        "state": "ESCALATED",
+        "status": "missing",
+        "opened_at": 1794764116,
+        "rows_before": 0,
+        "rows_now": 0,
+        "failed_tries": 0,
+        "tries_today": 0,
+        "tries_day": "2026-11-15",
+        "since": 1794764169,
+        "need_operator": true,
+        "reason": "no re-pull path for age 2",
+        "counted_at": 1794771205
+      },
+      "2026-11-14": {
+        "state": "OPEN",
+        "status": "missing",
+        "opened_at": 1794765692,
+        "rows_before": 0,
+        "rows_now": 0,
+        "counted_at": 1794771205,
+        "failed_tries": 2,
+        "tries_today": 2,
+        "tries_day": "2026-11-15",
+        "since": 1794771205,
+        "last_try": {
+          "at": 1794768450,
+          "method": "command",
+          "label": "command: open -g -a \"Google Chrome\" \"https://throughlinepro.com/#tl-ext-run-daily\"",
+          "rc": 0
+        },
+        "verify_at": 1794771150,
+        "need_operator": true,
+        "reason": "re-pull failed twice (command: open -g -a \"Google Chrome\" \"https://throughlinepro.com/#tl-ext-run-daily\")"
+      }
+    },
+    "ok_periods": [
+      "2026-11-01",
+      "2026-11-02",
+      "2026-11-03",
+      "2026-11-04",
+      "2026-11-05",
+      "2026-11-06",
+      "2026-11-07",
+      "2026-11-08"
+    ],
+    "checked_at": 1794771205,
+    "error_ticks": 0,
+    "last_action": "data operator diagnosing 2026-11-14",
+    "last_complete": "2026-11-08",
+    "full_scan_date": "2026-11-15",
+    "operator_gaps": "[\"2026-11-14\"]",
+    "incident": "/Users/jimross/.walkaway-cli/data-fixes/bb-showings-daily-2026-11-15/handoff/job-incident-bb-showings-daily-2026-11-15.md",
+    "operator_pid": 22683
+  },
+  "check": {
+    "series": "bb-showings-daily",
+    "as_of": "2026-11-15 14:33 EST",
+    "checked_at": "2026-11-15T19:33:25Z",
+    "floor": 10,
+    "periods": [
+      {
+        "period": "2026-11-15",
+        "key": "2026-11-15",
+        "age": 0,
+        "ready_at": "2026-11-16T18:00:00Z",
+        "ready": false,
+        "count": null,
+        "status": "not_ready",
+        "query": "pulse_bb_showings_daily?select=obs_date&is_total=eq.true&obs_date=eq.2026-11-15"
+      },
+      {
+        "period": "2026-11-14",
+        "key": "2026-11-14",
+        "age": 1,
+        "ready_at": "2026-11-15T18:00:00Z",
+        "ready": true,
+        "count": 0,
+        "status": "missing",
+        "query": "pulse_bb_showings_daily?select=obs_date&is_total=eq.true&obs_date=eq.2026-11-14"
+      },
+      {
+        "period": "2026-11-13",
+        "key": "2026-11-13",
+        "age": 2,
+        "ready_at": "2026-11-14T18:00:00Z",
+        "ready": true,
+        "count": 0,
+        "status": "missing",
+        "query": "pulse_bb_showings_daily?select=obs_date&is_total=eq.true&obs_date=eq.2026-11-13"
+      },
+      {
+        "period": "2026-11-12",
+        "key": "2026-11-12",
+        "age": 3,
+        "ready_at": "2026-11-13T18:00:00Z",
+        "ready": true,
+        "count": 0,
+        "status": "missing",
+        "query": "pulse_bb_showings_daily?select=obs_date&is_total=eq.true&obs_date=eq.2026-11-12"
+      },
+      {
+        "period": "2026-11-11",
+        "key": "2026-11-11",
+        "age": 4,
+        "ready_at": "2026-11-12T18:00:00Z",
+        "ready": true,
+        "count": 0,
+        "status": "missing",
+        "query": "pulse_bb_showings_daily?select=obs_date&is_total=eq.true&obs_date=eq.2026-11-11"
+      },
+      {
+        "period": "2026-11-10",
+        "key": "2026-11-10",
+        "age": 5,
+        "ready_at": "2026-11-11T18:00:00Z",
+        "ready": true,
+        "count": 0,
+        "status": "missing",
+        "query": "pulse_bb_showings_daily?select=obs_date&is_total=eq.true&obs_date=eq.2026-11-10"
+      },
+      {
+        "period": "2026-11-09",
+        "key": "2026-11-09",
+        "age": 6,
+        "ready_at": "2026-11-10T18:00:00Z",
+        "ready": true,
+        "count": 0,
+        "status": "missing",
+        "query": "pulse_bb_showings_daily?select=obs_date&is_total=eq.true&obs_date=eq.2026-11-09"
+      },
+      {
+        "period": "2026-11-08",
+        "key": "2026-11-08",
+        "age": 7,
+        "ready_at": "2026-11-09T18:00:00Z",
+        "ready": true,
+        "count": 21,
+        "status": "ok",
+        "query": "pulse_bb_showings_daily?select=obs_date&is_total=eq.true&obs_date=eq.2026-11-08"
+      },
+      {
+        "period": "2026-11-07",
+        "key": "2026-11-07",
+        "age": 8,
+        "ready_at": "2026-11-08T18:00:00Z",
+        "ready": true,
+        "count": 21,
+        "status": "ok",
+        "query": "pulse_bb_showings_daily?select=obs_date&is_total=eq.true&obs_date=eq.2026-11-07"
+      },
+      {
+        "period": "2026-11-06",
+        "key": "2026-11-06",
+        "age": 9,
+        "ready_at": "2026-11-07T18:00:00Z",
+        "ready": true,
+        "count": 21,
+        "status": "ok",
+        "query": "pulse_bb_showings_daily?select=obs_date&is_total=eq.true&obs_date=eq.2026-11-06"
+      },
+      {
+        "period": "2026-11-05",
+        "key": "2026-11-05",
+        "age": 10,
+        "ready_at": "2026-11-06T18:00:00Z",
+        "ready": true,
+        "count": 21,
+        "status": "ok",
+        "query": "pulse_bb_showings_daily?select=obs_date&is_total=eq.true&obs_date=eq.2026-11-05"
+      },
+      {
+        "period": "2026-11-04",
+        "key": "2026-11-04",
+        "age": 11,
+        "ready_at": "2026-11-05T18:00:00Z",
+        "ready": true,
+        "count": 21,
+        "status": "ok",
+        "query": "pulse_bb_showings_daily?select=obs_date&is_total=eq.true&obs_date=eq.2026-11-04"
+      },
+      {
+        "period": "2026-11-03",
+        "key": "2026-11-03",
+        "age": 12,
+        "ready_at": "2026-11-04T18:00:00Z",
+        "ready": true,
+        "count": 21,
+        "status": "ok",
+        "query": "pulse_bb_showings_daily?select=obs_date&is_total=eq.true&obs_date=eq.2026-11-03"
+      },
+      {
+        "period": "2026-11-02",
+        "key": "2026-11-02",
+        "age": 13,
+        "ready_at": "2026-11-03T18:00:00Z",
+        "ready": true,
+        "count": 21,
+        "status": "ok",
+        "query": "pulse_bb_showings_daily?select=obs_date&is_total=eq.true&obs_date=eq.2026-11-02"
+      },
+      {
+        "period": "2026-11-01",
+        "key": "2026-11-01",
+        "age": 14,
+        "ready_at": "2026-11-02T18:00:00Z",
+        "ready": true,
+        "count": 21,
+        "status": "ok",
+        "query": "pulse_bb_showings_daily?select=obs_date&is_total=eq.true&obs_date=eq.2026-11-01"
+      }
+    ],
+    "gaps": [
+      {
+        "period": "2026-11-14",
+        "count": 0,
+        "status": "missing"
+      },
+      {
+        "period": "2026-11-13",
+        "count": 0,
+        "status": "missing"
+      },
+      {
+        "period": "2026-11-12",
+        "count": 0,
+        "status": "missing"
+      },
+      {
+        "period": "2026-11-11",
+        "count": 0,
+        "status": "missing"
+      },
+      {
+        "period": "2026-11-10",
+        "count": 0,
+        "status": "missing"
+      },
+      {
+        "period": "2026-11-09",
+        "count": 0,
+        "status": "missing"
+      }
+    ],
+    "errors": [],
+    "last_complete": "2026-11-08"
+  },
+  "repull_log": [
+    "[2026-11-15 13:01:33] bb-showings-daily: command open -g -a \"Google Chrome\" \"https://throughlinepro.com/#tl-ext-run-daily\"",
+    "[2026-11-15 13:01:34] bb-showings-daily: fired command: open -g -a \"Google Chrome\" \"https://throughlinepro.com/#tl-ext-run-daily\" for 2026-11-14..2026-11-14 (rows before: 2026-11-14=0)",
+    "[2026-11-15 13:47:30] bb-showings-daily: command open -g -a \"Google Chrome\" \"https://throughlinepro.com/#tl-ext-run-daily\"",
+    "[2026-11-15 13:47:31] bb-showings-daily: fired command: open -g -a \"Google Chrome\" \"https://throughlinepro.com/#tl-ext-run-daily\" for 2026-11-14..2026-11-14 (rows before: 2026-11-14=0)"
+  ],
+  "gaps": [
+    {
+      "state": "OPEN",
+      "status": "missing",
+      "opened_at": 1794765692,
+      "rows_before": 0,
+      "rows_now": 0,
+      "counted_at": 1794771205,
+      "failed_tries": 2,
+      "tries_today": 2,
+      "tries_day": "2026-11-15",
+      "since": 1794771205,
+      "last_try": {
+        "at": 1794768450,
+        "method": "command",
+        "label": "command: open -g -a \"Google Chrome\" \"https://throughlinepro.com/#tl-ext-run-daily\"",
+        "rc": 0
+      },
+      "verify_at": 1794771150,
+      "need_operator": true,
+      "reason": "re-pull failed twice (command: open -g -a \"Google Chrome\" \"https://throughlinepro.com/#tl-ext-run-daily\")",
+      "period": "2026-11-14",
+      "floor": 10
+    }
+  ]
+}
