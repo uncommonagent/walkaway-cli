@@ -718,34 +718,56 @@ data_act() {
     esac
   done < <(jq -r '.gaps | to_entries[] | select(.value.state == "OPEN") | .key' <<< "$st" | sort)
 
-  # 3. Fire each chosen method once for all of its gaps.
-  local idx m label from to rc ps
+  # 3. Fire each chosen method once per run of consecutive gap periods. A date-range hook ({from}/{to}) never spans
+  #    a complete period between two gaps; a trigger without dates fires once for all of its gaps. An Amazon guard
+  #    is re-checked right before every trigger (the previous one this tick stamped the pace): a deferral is no try.
+  local idx m label from to rc ps all cad fired=0 run prev
+  cad=$(jq -r '.cadence // "daily"' <<< "$s")
   while IFS= read -r idx; do
     [[ -n "$idx" ]] || continue
-    ps=$(printf '%s\n' "${groups[@]}" | awk -F'\t' -v i="$idx" '$1 == i {print $2}' | sort)
-    from=$(head -1 <<< "$ps"); to=$(_period_end "$(jq -r '.cadence // "daily"' <<< "$s")" "$(tail -1 <<< "$ps")")
+    all=$(printf '%s\n' "${groups[@]}" | awk -F'\t' -v i="$idx" '$1 == i {print $2}' | sort)
     m=$(jq -c --argjson i "$idx" '.repull[$i]' <<< "$s"); label=$(_method_label "$m")
-    rc=0; _fire "$cfg" "$s" "$idx" "$from" "$to" || rc=$?
-    local pj va
-    pj=$(jq -R . <<< "$ps" | jq -sc .)
-    va=$(( now + $(jq -r '.verify_after_mins // 30' <<< "$m") * 60 ))
-    if (( rc == 0 )); then
-      dstate_update "$name" 'reduce $ps[] as $p (.; .gaps[$p].tries_today += 1 | .gaps[$p].tries_day = $d
-          | .gaps[$p].last_try = {at: ($n|tonumber), method: $m, label: $l, rc: 0} | .gaps[$p].verify_at = ($va|tonumber))' \
-        --argjson ps "$pj" --arg d "$today" --arg n "$now" --arg m "$(jq -r .method <<< "$m")" --arg l "$label" --arg va "$va"
-      # shellcheck disable=SC2046  # one period per word
-      data_gap_transition "$name" REPULLING "re-pull $(_dates_label $(tr '\n' ' ' <<< "$ps")) via $label; verify $(TZ=$JOBS_TZ date -r "$va" +%H:%M)" $(tr '\n' ' ' <<< "$ps")
-      _drepull_log "$name: fired $label for $from..$to (rows before: $(jq -r --argjson ps "$pj" '[.gaps | to_entries[] | select(.key as $k | $ps | index($k)) | "\(.key)=\(.value.rows_now)"] | join(" ")' "$(_dstate_file "$name")"))"
+    local -a runs=()
+    if jq -e '(.command // .path // "") | test("\\{(from|to)\\}")' <<< "$m" > /dev/null; then
+      run=""; prev=""
+      while IFS= read -r p; do
+        if [[ -n "$prev" && "$(_anchor_back "$cad" "$prev" -1)" != "$p" ]]; then runs+=("$run"); run=""; fi
+        run+="${run:+$'\n'}$p"; prev=$p
+      done <<< "$all"
+      runs+=("$run")
     else
-      dstate_update "$name" 'reduce $ps[] as $p (.; .gaps[$p].tries_today += 1 | .gaps[$p].tries_day = $d | .gaps[$p].failed_tries += 1
-          | .gaps[$p].last_try = {at: ($n|tonumber), method: $m, label: $l, rc: ($rc|tonumber)}) | .last_action = $a' \
-        --argjson ps "$pj" --arg d "$today" --arg n "$now" --arg m "$(jq -r .method <<< "$m")" --arg l "$label" --arg rc "$rc" \
-        --arg a "re-pull trigger failed (rc $rc): $label"
-      _dlog "$name: trigger failed rc=$rc $label"
+      runs=("$all")
     fi
+    for ps in "${runs[@]}"; do
+      from=$(head -1 <<< "$ps"); to=$(_period_end "$cad" "$(tail -1 <<< "$ps")")
+      if [[ "$(jq -r '.guard // ""' <<< "$m")" == "amazon" ]]; then
+        local gw
+        gw=$(_amazon_guard "$cfg")
+        if [[ -n "$gw" ]]; then waits+="${from:5}..${to:5}: $gw; "; _dlog "$name: $from..$to deferred ($gw)"; continue; fi
+      fi
+      rc=0; _fire "$cfg" "$s" "$idx" "$from" "$to" || rc=$?
+      fired=$((fired + 1))
+      local pj va
+      pj=$(jq -R . <<< "$ps" | jq -sc .)
+      va=$(( now + $(jq -r '.verify_after_mins // 30' <<< "$m") * 60 ))
+      if (( rc == 0 )); then
+        dstate_update "$name" 'reduce $ps[] as $p (.; .gaps[$p].tries_today += 1 | .gaps[$p].tries_day = $d
+            | .gaps[$p].last_try = {at: ($n|tonumber), method: $m, label: $l, rc: 0} | .gaps[$p].verify_at = ($va|tonumber))' \
+          --argjson ps "$pj" --arg d "$today" --arg n "$now" --arg m "$(jq -r .method <<< "$m")" --arg l "$label" --arg va "$va"
+        # shellcheck disable=SC2046  # one period per word
+        data_gap_transition "$name" REPULLING "re-pull $(_dates_label $(tr '\n' ' ' <<< "$ps")) via $label; verify $(TZ=$JOBS_TZ date -r "$va" +%H:%M)" $(tr '\n' ' ' <<< "$ps")
+        _drepull_log "$name: fired $label for $from..$to (rows before: $(jq -r --argjson ps "$pj" '[.gaps | to_entries[] | select(.key as $k | $ps | index($k)) | "\(.key)=\(.value.rows_now)"] | join(" ")' "$(_dstate_file "$name")"))"
+      else
+        dstate_update "$name" 'reduce $ps[] as $p (.; .gaps[$p].tries_today += 1 | .gaps[$p].tries_day = $d | .gaps[$p].failed_tries += 1
+            | .gaps[$p].last_try = {at: ($n|tonumber), method: $m, label: $l, rc: ($rc|tonumber)}) | .last_action = $a' \
+          --argjson ps "$pj" --arg d "$today" --arg n "$now" --arg m "$(jq -r .method <<< "$m")" --arg l "$label" --arg rc "$rc" \
+          --arg a "re-pull trigger failed (rc $rc): $label"
+        _dlog "$name: trigger failed rc=$rc $label"
+      fi
+    done
   done < <(printf '%s\n' "${groups[@]+"${groups[@]}"}" | cut -f1 | grep . | sort -un)
 
-  [[ -n "$waits" ]] && (( ${#groups[@]} == 0 )) && dstate_update "$name" '.last_action = $a' --arg a "waiting: ${waits%; }"
+  [[ -n "$waits" ]] && (( fired == 0 )) && dstate_update "$name" '.last_action = $a' --arg a "waiting: ${waits%; }"
 
   # 4. Gaps no re-pull can close (flagged this tick or earlier): the data operator decides (fix build or one question).
   (( ${#handoff[@]} > 0 )) && _dlog "$name: $(_dates_label "${handoff[@]}") -> data operator"

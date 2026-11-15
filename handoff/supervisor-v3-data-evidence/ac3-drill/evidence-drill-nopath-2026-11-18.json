@@ -54,20 +54,21 @@
       "2026-11-12": {
         "state": "OPEN",
         "status": "missing",
-        "opened_at": 1795023008,
+        "opened_at": 1795023051,
         "rows_before": 0,
         "rows_now": 0,
+        "counted_at": 1795026726,
         "failed_tries": 2,
         "tries_today": 2,
         "tries_day": "2026-11-18",
-        "since": 1795026744,
+        "since": 1795026726,
         "last_try": {
-          "at": 1795024881,
+          "at": 1795024863,
           "method": "command",
           "label": "command: bash /Users/jimross/Projects/walkaway-cli/tests/drill/work-data/pull-drill/scripts/pull.sh",
           "rc": 0
         },
-        "verify_at": 1795026681,
+        "verify_at": 1795026663,
         "need_operator": true,
         "reason": "re-pull failed twice (command: bash /Users/jimross/Projects/walkaway-cli/tests/drill/work-data/pull-drill/scripts/pull.sh)"
       }
@@ -87,18 +88,18 @@
       "2026-11-16",
       "2026-11-17"
     ],
-    "checked_at": 1795026744,
+    "checked_at": 1795026726,
     "error_ticks": 0,
     "last_action": "data operator diagnosing 2026-11-12",
     "last_complete": "2026-11-17",
     "full_scan_date": "2026-11-18",
-    "operator_pid": 79267,
+    "operator_pid": 99673,
     "operator_gaps": "[\"2026-11-12\"]"
   },
   "check": {
     "series": "drill-nopath",
     "as_of": "2026-11-18 13:32 EST",
-    "checked_at": "2026-11-18T18:32:24Z",
+    "checked_at": "2026-11-18T18:32:06Z",
     "floor": 10,
     "periods": [
       {
@@ -263,29 +264,30 @@
     "last_complete": "2026-11-17"
   },
   "repull_log": [
-    "[2026-11-15 12:22:11] drill-nopath: command bash /Users/jimross/Projects/walkaway-cli/tests/drill/work-data/pull-drill/scripts/pull.sh",
-    "[2026-11-15 12:22:13] drill-nopath: fired command: bash /Users/jimross/Projects/walkaway-cli/tests/drill/work-data/pull-drill/scripts/pull.sh for 2026-11-12..2026-11-12 (rows before: 2026-11-12=0)",
-    "[2026-11-15 12:22:23] drill-nopath: command bash /Users/jimross/Projects/walkaway-cli/tests/drill/work-data/pull-drill/scripts/pull.sh",
-    "[2026-11-15 12:22:24] drill-nopath: fired command: bash /Users/jimross/Projects/walkaway-cli/tests/drill/work-data/pull-drill/scripts/pull.sh for 2026-11-12..2026-11-12 (rows before: 2026-11-12=0)"
+    "[2026-11-15 13:13:54] drill-nopath: command bash /Users/jimross/Projects/walkaway-cli/tests/drill/work-data/pull-drill/scripts/pull.sh",
+    "[2026-11-15 13:13:55] drill-nopath: fired command: bash /Users/jimross/Projects/walkaway-cli/tests/drill/work-data/pull-drill/scripts/pull.sh for 2026-11-12..2026-11-12 (rows before: 2026-11-12=0)",
+    "[2026-11-15 13:14:04] drill-nopath: command bash /Users/jimross/Projects/walkaway-cli/tests/drill/work-data/pull-drill/scripts/pull.sh",
+    "[2026-11-15 13:14:06] drill-nopath: fired command: bash /Users/jimross/Projects/walkaway-cli/tests/drill/work-data/pull-drill/scripts/pull.sh for 2026-11-12..2026-11-12 (rows before: 2026-11-12=0)"
   ],
   "gaps": [
     {
       "state": "OPEN",
       "status": "missing",
-      "opened_at": 1795023008,
+      "opened_at": 1795023051,
       "rows_before": 0,
       "rows_now": 0,
+      "counted_at": 1795026726,
       "failed_tries": 2,
       "tries_today": 2,
       "tries_day": "2026-11-18",
-      "since": 1795026744,
+      "since": 1795026726,
       "last_try": {
-        "at": 1795024881,
+        "at": 1795024863,
         "method": "command",
         "label": "command: bash /Users/jimross/Projects/walkaway-cli/tests/drill/work-data/pull-drill/scripts/pull.sh",
         "rc": 0
       },
-      "verify_at": 1795026681,
+      "verify_at": 1795026663,
       "need_operator": true,
       "reason": "re-pull failed twice (command: bash /Users/jimross/Projects/walkaway-cli/tests/drill/work-data/pull-drill/scripts/pull.sh)",
       "period": "2026-11-12",

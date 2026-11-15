@@ -4,13 +4,14 @@
     "2026-11-16": {
       "state": "ESCALATED",
       "status": "missing",
-      "opened_at": 1795023008,
+      "opened_at": 1795023051,
       "rows_before": 0,
       "rows_now": 0,
+      "counted_at": 1795028694,
       "failed_tries": 0,
       "tries_today": 0,
       "tries_day": "2026-11-18",
-      "since": 1795023008,
+      "since": 1795023051,
       "need_operator": true,
       "reason": "no re-pull path for age 2 (source cannot re-pull a past period)",
       "lost": true
@@ -32,7 +33,7 @@
     "2026-11-17",
     "2026-11-18"
   ],
-  "checked_at": 1795028657,
+  "checked_at": 1795028694,
   "error_ticks": 0,
   "last_action": "drill-lost lost 2026-11-16 (0/4 rows): the source cannot re-pull a past day. Accept the loss, or fix the pull so it stops missing days?",
   "last_complete": "2026-11-18",

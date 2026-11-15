@@ -284,6 +284,29 @@ done < <(jq -r '.series[] | select(.watch == true) | . as $s | (.repull // [])[]
           | [$s.name, $s.cadence, (.command // .path)] | @tsv' <<< "$CFG_REAL")
 check "R17 covered all 16 re-pullable watched series" '[[ "$R17_N" == 16 ]]'
 
+# R18-R19: Codex cycle 2 regressions.
+echo "R18 Amazon pacing holds inside one tick: a second Amazon trigger waits 15 min (no try used)"
+fresh; at "2026-11-18 13:00"
+fill scratch-amazon 2026-11-01 2026-11-17 9; fill scratch-amazon 2026-11-17 2026-11-17 0; fill scratch-amazon 2026-11-08 2026-11-08 0
+mkdir -p "$S/data/state"; jq -n '{series: "scratch-amazon", gaps: {}, ok_periods: [], hook_merged: true}' > "$S/data/state/scratch-amazon.json"
+ev scratch-amazon
+check "one Amazon trigger this tick (run-now 11-17); the fix hook for 11-08 deferred" '[[ "$(trig_n scratch-amazon)" == 1 ]] && grep -q "^scratch-amazon run_now tracking_offsite 2026-11-17 2026-11-17$" "$S/triggers.log"'
+check "11-08 still OPEN with 0 tries" '[[ "$(gst scratch-amazon 2026-11-08 state)" == OPEN && "$(gst scratch-amazon 2026-11-08 tries_today)" == 0 && "$(gst scratch-amazon 2026-11-08 failed_tries)" == 0 ]]'
+at "2026-11-18 13:16"; ev scratch-amazon
+check "16 min later the fix hook fires for 11-08" '[[ "$(trig_n scratch-amazon)" == 2 ]] && grep -q "^scratch-amazon command echo fix-hook {from} {to} 2026-11-08 2026-11-08$" "$S/triggers.log"'
+
+echo "R19 a date-range hook gets one range per run of consecutive gaps (never spans a complete day)"
+fresh "$ROOT/data/series.yaml"; at "2026-11-18 13:00"
+all_ok meta-daily-metrics 2026-11-04; fill meta-daily-metrics 2026-11-07 2026-11-08 0; seed meta-daily-metrics true
+ev meta-daily-metrics
+check "two calls: 11-04..11-04 and 11-07..11-08" '[[ "$(trig_n meta-daily-metrics)" == 2 ]] && grep -qxF "meta-daily-metrics http /api/cron/meta-sync?from=2026-11-04&to=2026-11-04" "$S/triggers-resolved.log" && grep -qxF "meta-daily-metrics http /api/cron/meta-sync?from=2026-11-07&to=2026-11-08" "$S/triggers-resolved.log"'
+check "no call spans 11-05..11-06 (complete)" '! grep -q "from=2026-11-04&to=2026-11-08" "$S/triggers-resolved.log"'
+check "all three gaps REPULLING" '[[ "$(gst meta-daily-metrics 2026-11-04 state)$(gst meta-daily-metrics 2026-11-07 state)$(gst meta-daily-metrics 2026-11-08 state)" == REPULLINGREPULLINGREPULLING ]]'
+fresh; at "2026-11-18 13:00"
+fill scratch-daily 2026-11-01 2026-11-17 12; fill scratch-daily 2026-11-15 2026-11-15 0; fill scratch-daily 2026-11-17 2026-11-17 0
+ev scratch-daily
+check "a trigger without dates still fires once for non-consecutive gaps" '[[ "$(trig_n scratch-daily)" == 1 ]]'
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 (( FAIL == 0 ))

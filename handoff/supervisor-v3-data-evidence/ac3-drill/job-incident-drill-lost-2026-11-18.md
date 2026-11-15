@@ -1,6 +1,6 @@
 # Data incident - drill-lost - 2026-11-18
 
-Written by the walkaway data operator (read-only) at 2026-11-15 12:22 ET.
+Written by the walkaway data operator (read-only) at 2026-11-15 13:13 ET.
 
 ## Gaps
 - 2026-11-16: missing - rows 0 / floor 4 (rows when opened: 0); no re-pull path for age 2 (source cannot re-pull a past period); last try: none

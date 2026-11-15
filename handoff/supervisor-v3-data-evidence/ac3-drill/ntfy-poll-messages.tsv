@@ -1,8 +1,8 @@
-17:22:08	3	drill-busy: RUNNING - builder pid 44205, active 0m ago
-17:22:09	3	data drill-repull: OPEN - 2026-11-17 missing (0/10 rows)
-17:22:11	3	data drill-nopath: OPEN - 2026-11-12 missing (0/10 rows)
-17:22:14	3	data drill-lost: OPEN - 2026-11-16 missing (0/4 rows)
-17:22:15	4	data drill-lost: ESCALATED - drill-lost lost 2026-11-16 (0/4 rows): the source cannot re-pull a past day. Accept the loss, or fix the pull so it stops missing days?
-17:22:20	3	data drill-repull: CLOSED - 2026-11-17 rows 0 -> 12 (floor 10; via command: /Users/jimross/Projects/walkaway-cli/tests/drill/work-data/bin/land.sh drill-repull {from})
-17:23:07	3	data drill-nopath: FIXING - 2026-11-12: cause: The supervisor's re-pull cannot reach 2026-11-12 because scripts/pull.sh can only pull one date: scripts/pull.sh:17 sets `day=$(date -v-1d +%F)`, and ; fix build fix-data-drill-nopath-20261118 queued behind drill-busy in pull-drill
-17:23:16	3	data drill-nopath: CLOSED - 2026-11-12 rows 0 -> 12 (floor 10; via command (fix hook): bash /Users/jimross/Projects/walkaway-cli/tests/drill/work-data/pull-drill/scripts/pull.sh)
+18:13:51	3	drill-busy: RUNNING - builder pid 88804, active 0m ago
+18:13:52	3	data drill-repull: OPEN - 2026-11-17 missing (0/10 rows)
+18:13:54	3	data drill-nopath: OPEN - 2026-11-12 missing (0/10 rows)
+18:13:56	3	data drill-lost: OPEN - 2026-11-16 missing (0/4 rows)
+18:13:57	4	data drill-lost: ESCALATED - drill-lost lost 2026-11-16 (0/4 rows): the source cannot re-pull a past day. Accept the loss, or fix the pull so it stops missing days?
+18:14:02	3	data drill-repull: CLOSED - 2026-11-17 rows 0 -> 12 (floor 10; via command: /Users/jimross/Projects/walkaway-cli/tests/drill/work-data/bin/land.sh drill-repull {from})
+18:14:44	3	data drill-nopath: FIXING - 2026-11-12: cause: scripts/pull.sh can only pull yesterday; fix build fix-data-drill-nopath-20261118 queued behind drill-busy in pull-drill
+18:14:53	3	data drill-nopath: CLOSED - 2026-11-12 rows 0 -> 12 (floor 10; via command (fix hook): bash /Users/jimross/Projects/walkaway-cli/tests/drill/work-data/pull-drill/scripts/pull.sh)

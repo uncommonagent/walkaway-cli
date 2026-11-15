@@ -1,6 +1,6 @@
-supervisor last tick: 2026-11-15 12:23:18 EST
+supervisor last tick: 2026-11-15 13:14:55 EST
 FEATURE                         REPO        STATE    AGE  IN-STATE  LAST ACTION
-drill-busy                      pull-drill  RUNNING  1m   1m        builder pid 44205, active 0m ago
+drill-busy                      pull-drill  RUNNING  1m   1m        builder pid 88804, active 0m ago
 fix-data-drill-nopath-20261118  pull-drill  MERGED   0m   0m        drill: simulated merge
 
 JOBS (2026-11-15, job watching OFF)
