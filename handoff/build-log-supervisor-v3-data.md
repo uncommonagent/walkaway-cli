@@ -1,0 +1,1 @@
+- Phase 0 prepare + inventory: plan mapped to P0-P7; baseline shellcheck 0, 180/180; 49 pulls/crons inventoried -> 21 watched series + 28 excluded; floors from real rows (phase0-floors.tsv); real gap: pulse_bb_showings_daily none after 2026-11-08; live supervisor runs from this tree (new files + data.enabled gate)
