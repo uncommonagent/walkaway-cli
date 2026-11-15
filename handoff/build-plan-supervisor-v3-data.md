@@ -1,5 +1,9 @@
 # Walkaway Build Plan: supervisor-v3-data
 
+## RESUME DIRECTIVE (auto, resume 1/2, 2026-11-15 14:28 ET) - read first
+The previous builder session ended without a build or failure report (STALLED: no activity 40m). Continue from handoff/build-log-supervisor-v3-data.md and the newest phase report: do NOT redo committed phases; finish the first unfinished phase, then continue the plan. Any earlier RESUME DIRECTIVE not marked [DONE] still applies.
+No-op resume: if every phase is already committed and handoff/build-report-supervisor-v3-data.md exists, re-run nothing. Append one line "build-report supervisor-v3-data (no-op resume 1/2, <ET timestamp>): all phases already complete" to handoff/build-report-supervisor-v3-data.md (and build-report-CURRENT.md), commit and push it, then exit.
+
 ## RESUME DIRECTIVE (auto, approved fix 1, 2026-11-15 12:51 ET) - read first
 RESUME DIRECTIVE (operator, Codex cycle 1 P1 + P2), approved as proposed in failure-report-supervisor-v3-data-codex.md, with these additions.
 

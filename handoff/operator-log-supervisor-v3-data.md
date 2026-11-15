@@ -54,3 +54,6 @@ Then finish Phase 6:
 Then Phase 7: evidence MANIFEST, PR, CI green, build report LAST.
 
 Then continue the plan from the build log; do not redo committed phases.
+
+## 2026-11-15 14:28 ET - RESUME (auto 1/2)
+Trigger: STALLED: no activity 40m. Killed leftovers, wrote RESUME DIRECTIVE (auto) to the plan, relaunching.
