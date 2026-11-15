@@ -2,6 +2,20 @@
 
 ## Follow-ups
 
+### supervisor-v3-data (2026-11-15, logged by the build, not built: out of scope or owner-repo work)
+
+- **supervisor-v3-data: answering a data ESCALATED.** A data escalation has no plan to write a directive into, so
+  today Jim's answer means queuing the owner-repo fix plan by hand. Fix: `walkaway answer <series> "<text>"` re-runs
+  the data operator with the answer, which then queues the date-range hook build.
+- **supervisor-v3-data: one escalation per cause.** A new gap with the same root cause as an open ESCALATED gap
+  (BB 11-14 after 11-09..11-13) got its own diagnosis and a second high-priority ping. Fix: join the new gap into the
+  open escalation when the series already has an unanswered one.
+- **throughline-app (owner repo): BB login loss is silent.** `maybeRunBbAfterSt` drops needsLogin/bb_error
+  (background.js:229, bb-core.js:885-914). The data supervisor catches the gap a day later. The extension should
+  report it itself. That needs a throughline-app plan, because it changes how pulls work.
+
+### build-supervisor
+
 Items that remain after build-supervisor's Codex cycle 2. Under the protocol's 2-cycle cap they are logged here and
 were not built. Source: handoff/failure-report-build-supervisor-codex-cycle-2.md (Notes).
 
