@@ -17,7 +17,7 @@ TEST_YAML="$ROOT/tests/fixtures/data/series-test.yaml"
 fresh() { # fresh scratch home + fixture dir
   S=$(mktemp -d); mkdir -p "$S/fx"
   export WALKAWAY_HOME="$S" WALKAWAY_DATA_FIXTURES="$S/fx" WALKAWAY_DATA_FILE="$TEST_YAML" WALKAWAY_DATA_COUNT_LOG="$S/counts.log"
-  export WALKAWAY_DATA_TRIGGER_CMD="$ROOT/tests/fixtures/data/trigger-stub.sh"
+  export WALKAWAY_DATA_TRIGGER_CMD="$ROOT/tests/fixtures/data/trigger-stub.sh" WALKAWAY_DATA_OPERATOR="$ROOT/tests/fixtures/data/operator-stub.sh"
 }
 # opened <series> <period>: the gap was opened (data_evaluate may already have moved it on to REPULLING)
 opened() { [[ "$(gst "$1" "$2" state)" == OPEN || "$(gst "$1" "$2" state)" == REPULLING ]]; }
@@ -140,6 +140,25 @@ check "cc 10-23 (lag 2, ready 10-25 11:00) judged; 10-24 not" '[[ -z "$(gst amz-
 at "2026-11-15 13:30"; fill bb-showings-daily 2026-10-25 2026-11-08 21
 ev bb-showings-daily
 check "bb 11-09..11-14 OPEN (real gap)" 'grep -q "data bb-showings-daily: OPEN - 2026-11-09..11-14 missing (0/10 rows)" "$S/logs/ntfy.log"'
+
+
+echo "D10 supervisor hook: gated on data.enabled; heartbeat lists open gaps only; status has the DATA table"
+fresh; at "2026-11-18 13:00"
+fill scratch-daily 2026-11-01 2026-11-17 12; setc scratch-daily 2026-11-12 0
+fill scratch-weekday 2026-11-01 2026-11-17 3; fill scratch-amazon 2026-11-01 2026-11-17 9; fill scratch-lost 2026-11-01 2026-11-18 4
+for a in 2026-10-19 2026-10-26 2026-11-02 2026-11-09 2026-11-16; do setc scratch-weekly "$a" 500; done
+mkdir -p "$S/registry"
+bash "$ROOT/lib/supervisor.sh" tick > "$S/sup.log" 2>&1
+check "data.enabled absent: the tick does no data work" '[[ ! -d "$S/data/state" ]]'
+touch "$S/data.enabled"
+bash "$ROOT/lib/supervisor.sh" tick > "$S/sup.log" 2>&1
+check "data.enabled: every watched series evaluated (5 state files)" '[[ "$(ls "$S/data/state" | grep -c "^scratch-.*json$")" == 5 ]]'
+check "excluded series never evaluated" '[[ ! -f "$S/data/state/scratch-excluded.json" ]]'
+check "the tick logged the gap transition" 'grep -q "data: scratch-daily: 2026-11-12 -> OPEN" "$S/sup.log"'
+hb=$(WALKAWAY_HEARTBEAT_HOURS="$(TZ=America/New_York date +%H)" bash -c "source '$ROOT/lib/supervisor.sh'; supervisor_heartbeat"; tail -1 "$S/logs/ntfy.log")
+check "heartbeat: one line for the series with an open gap, none for complete series" 'grep -q "data scratch-daily: 1 open gap(s) 2026-11-12 OPEN" <<< "$hb" && ! grep -q "data scratch-weekday" <<< "$hb"'
+st=$(bash "$ROOT/walkaway.sh" status 2>&1)
+check "walkaway status prints the DATA table (series, last complete, open gaps, last action)" 'grep -q "^DATA (2026-11-18, data watching on)" <<< "$st" && grep -qE "^SERIES +LAST COMPLETE +OPEN GAPS +LAST ACTION" <<< "$st" && grep -qE "^scratch-daily +2026-11-17 +11-12 OPEN" <<< "$st"'
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

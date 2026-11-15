@@ -616,13 +616,14 @@ data_act() {
   local cfg="$1" name="$2" s st today now max fixed
   s=$(data_get "$cfg" "$name"); today=$(data_today); now=$(_data_now)
   max=$(jq -r '.max_tries_per_day' <<< "$s")
-  if declare -F _data_operator_alive > /dev/null && _data_operator_alive "$name"; then
+  if _data_operator_alive "$name"; then
     dstate_update "$name" '.last_action = "data operator running"'; return 0
   fi
-  if declare -F data_fix_progress > /dev/null && [[ -n "$(dstate_get "$name" .fix_feature)" && "$(dstate_get "$name" .fix_merged)" != "true" ]]; then
+  if [[ -n "$(dstate_get "$name" .fix_feature)" && "$(dstate_get "$name" .fix_merged)" != "true" ]]; then
     data_fix_progress "$cfg" "$name"
   fi
-  fixed=$(dstate_get "$name" .fix_merged); fixed=${fixed:-false}
+  # requires_fix hooks are enabled once any fix build for this series merged (the hook then exists in the owner repo).
+  fixed=$(dstate_get "$name" .hook_merged); fixed=${fixed:-false}
 
   # 1. Verify: a REPULLING gap past verify_at whose rows did not land (detect ran first this tick) = a failed try.
   local p failed=()
@@ -693,10 +694,43 @@ data_act() {
 
   [[ -n "$waits" ]] && (( ${#groups[@]} == 0 )) && dstate_update "$name" '.last_action = $a' --arg a "waiting: ${waits%; }"
 
-  # 4. Gaps no re-pull can close: the data operator decides (fix build or one question).
-  if (( ${#handoff[@]} > 0 )) && declare -F _data_spawn_operator > /dev/null; then
-    _data_spawn_operator "$name"
+  # 4. Gaps no re-pull can close (flagged this tick or earlier): the data operator decides (fix build or one question).
+  (( ${#handoff[@]} > 0 )) && _dlog "$name: $(_dates_label "${handoff[@]}") -> data operator"
+  _data_spawn_operator "$name"
+  return 0
+}
+
+# ── data operator hand-off (plan item 3) ─────────────────────────────────────
+
+_data_operator_alive() { local p; p=$(dstate_get "$1" .operator_pid); [[ -n "$p" ]] && kill -0 "$p" 2>/dev/null; }
+
+# _data_spawn_operator <series>: detached data-operator.sh diagnose for the gaps marked need_operator. If it already
+# ran for exactly these gaps and left them unresolved, never loop: escalate once.
+_data_spawn_operator() {
+  local name="$1" op="${WALKAWAY_DATA_OPERATOR:-${DATA_DIR}/data-operator.sh}" gaps prev log
+  [[ -f "$op" ]] || return 0
+  _data_operator_alive "$name" && return 0
+  gaps=$(jq -c '[.gaps | to_entries[] | select(.value.state == "OPEN" and .value.need_operator == true) | .key] | sort' "$(_dstate_file "$name")")
+  [[ "$gaps" == "[]" ]] && return 0
+  prev=$(dstate_get "$name" .operator_gaps)
+  if [[ "$prev" == "$gaps" ]]; then
+    # shellcheck disable=SC2046  # one period per word
+    data_gap_transition "$name" ESCALATED "Data operator exited without a decision on $name $(_dates_label $(jq -r '.[]' <<< "$gaps")). How should these gaps be handled?" $(jq -r '.[]' <<< "$gaps")
+    return 0
   fi
+  log="${WALKAWAY_HOME}/logs/data-operator-${name}.log"; mkdir -p "${WALKAWAY_HOME}/logs"
+  nohup bash "$op" diagnose "$name" >> "$log" 2>&1 < /dev/null &
+  local p=$!
+  disown "$p" 2>/dev/null || true
+  dstate_update "$name" '.operator_pid = ($p|tonumber) | .operator_gaps = $g | .last_action = $a' --arg p "$p" --arg g "$gaps" \
+    --arg a "data operator diagnosing $(jq -r 'join(", ")' <<< "$gaps")"
+}
+
+# data_fix_progress <config> <series>: follow the series' fix build (data-operator.sh progress).
+data_fix_progress() {
+  local op="${WALKAWAY_DATA_OPERATOR:-${DATA_DIR}/data-operator.sh}"
+  mkdir -p "${WALKAWAY_HOME}/logs"
+  [[ -f "$op" ]] && bash "$op" progress "$2" >> "${WALKAWAY_HOME}/logs/data-operator-$2.log" 2>&1
   return 0
 }
 
@@ -704,7 +738,7 @@ data_act() {
 data_evaluate() {
   local cfg="$1" name="$2"
   data_detect "$cfg" "$name" || { _dlog "$name: detect error"; return 1; }
-  if declare -F data_act > /dev/null; then data_act "$cfg" "$name"; fi
+  data_act "$cfg" "$name"
   return 0
 }
 

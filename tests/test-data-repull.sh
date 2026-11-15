@@ -18,7 +18,7 @@ STUB="$ROOT/tests/fixtures/data/trigger-stub.sh"
 fresh() {
   S=$(mktemp -d); mkdir -p "$S/fx"
   export WALKAWAY_HOME="$S" WALKAWAY_DATA_FIXTURES="$S/fx" WALKAWAY_DATA_FILE="${1:-$TEST_YAML}" WALKAWAY_DATA_TRIGGER_CMD="$STUB"
-  echo '[]' > "$S/guard.json"; export WALKAWAY_DATA_GUARD_FIXTURE="$S/guard.json"
+  echo '[]' > "$S/guard.json"; export WALKAWAY_DATA_GUARD_FIXTURE="$S/guard.json" WALKAWAY_DATA_OPERATOR="$ROOT/tests/fixtures/data/operator-stub.sh"
   unset STUB_LAND STUB_RC
 }
 at() { export WALKAWAY_DATA_NOW; WALKAWAY_DATA_NOW=$(TZ=America/New_York date -j -f '%Y-%m-%d %H:%M' "$1" +%s); }
@@ -127,7 +127,7 @@ fresh; at "2026-11-18 13:00"
 fill scratch-amazon 2026-11-01 2026-11-17 9; fill scratch-amazon 2026-11-08 2026-11-09 0
 ev scratch-amazon
 check "before the fix: no path (ages 9-10)" '[[ "$(gst scratch-amazon 2026-11-08 need_operator)" == true && "$(trig_n scratch-amazon)" == 0 ]]'
-jq '.fix_merged = true | .gaps |= map_values(del(.need_operator) | .failed_tries = 0)' "$S/data/state/scratch-amazon.json" > "$S/t" && mv "$S/t" "$S/data/state/scratch-amazon.json"
+jq '.hook_merged = true | .gaps |= map_values(del(.need_operator) | .failed_tries = 0)' "$S/data/state/scratch-amazon.json" > "$S/t" && mv "$S/t" "$S/data/state/scratch-amazon.json"
 at "2026-11-18 13:02"; ev scratch-amazon
 check "after the fix merged: the hook fires once for 11-08..11-09" '[[ "$(trig_n scratch-amazon)" == 1 ]] && grep -q "^scratch-amazon command echo fix-hook {from} {to} 2026-11-08 2026-11-09$" "$S/triggers.log"'
 
