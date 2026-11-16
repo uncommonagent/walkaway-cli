@@ -234,17 +234,21 @@ jobs:
     retry_end: "09:15"   # plan said 08:30; 11/09 issue 71 generated 08:31 ET. Data-gate cap is 09:00.
     protected: false
     quality_rules: null
-    retry: null   # a re-fire is an Inngest event (newsletter/monday.rerun); left to Jim
+    # monday-ready (PR #414, 11/16): the Mini fallback reruns the same handler; it treats a `running` row older
+    # than 45 min as dead and exits if the week's issue already exists, so it is safe to run once on FAILED.
+    retry: {command: "cd ~/Projects/Throughline/throughline-app && node_modules/.bin/tsx scripts/monday-fallback.mts", note: "Mini fallback rerun of the Monday handler (drafts only, nothing sent)"}
     check:
       source: throughline
       queries:
         issue: "pulse_newsletter_issues?select=issue_no,week_end,status,created_at,generated_at:content->substack->>generatedAt&team_id=eq.{pulse_team}&week_end=eq.{yesterday}"
-        runs: "monday_run_reports?select=status,issue_no,gate_blocked_reason,failure_reason,auto_refired_at,started_at,finished_at&team_id=eq.{pulse_team}&week_end=eq.{yesterday}&order=started_at.desc&limit=3"
+        runs: "monday_run_reports?select=status,issue_no,gate_blocked_reason,failure_reason,issue_skipped_reason,auto_refired_at,started_at,finished_at&team_id=eq.{pulse_team}&week_end=eq.{yesterday}&order=started_at.desc&limit=3"
       predicate: |
         (.q.issue[0] // null) as $i | (.q.runs[0] // null) as $r
         | if $i != null and $i.generated_at != null then {verdict: "ok", detail: "issue #\($i.issue_no) week_end \($i.week_end) generated \($i.generated_at[0:19])Z"}
           elif $r == null then {verdict: "pending", detail: "no Monday run for week_end \(.yesterday) yet"}
+          elif $r.status == "running" and (($r.started_at[0:19] + "Z" | fromdateiso8601) < (now - 2700)) then {verdict: "failed", detail: "run stuck in running since \($r.started_at[0:19])Z (>45 min)"}
           elif $r.status == "running" then {verdict: "pending", detail: "run in progress since \($r.started_at[0:19])Z"}
+          elif $r.status == "complete" or $r.status == "failed" then {verdict: "failed", detail: "run \($r.status) but no issue for week_end \(.yesterday): \($r.issue_skipped_reason // $r.failure_reason // "no reason")"}
           else {verdict: "retrying", detail: "latest run \($r.status): \($r.gate_blocked_reason // $r.failure_reason // "no reason")"} end
     diagnose:
       notes:
@@ -277,3 +281,54 @@ jobs:
       notes:
         - "Publisher: tools/substack-publisher/src/{cli,plan,data}.ts (launchd com.throughline.substack-publisher Mon 07:00, polls to 10:00); evidence /tmp/substack-publisher/<ts>/"
         - "A republish is customer-facing (PROTECTED): escalate"
+
+  # Added 2026-11-16 with monday-ready (Throughline PR #414): AR drafts + the ready-for-review email.
+  - name: monday-ar
+    title: Monday AR drafts prepared
+    enabled: true
+    owner_repo: ~/Projects/Throughline/throughline-app
+    days: [mon]
+    kind: daily
+    window: {start: "05:30", end: "09:00"}
+    retry_end: "09:15"
+    protected: false   # drafts only; nothing is sent
+    quality_rules: null
+    retry: {command: "cd ~/Projects/Throughline/throughline-app && node_modules/.bin/tsx scripts/monday-fallback.mts", note: "Mini fallback rerun (AR stage reruns idempotently)"}
+    check:
+      source: throughline
+      queries:
+        runs: "monday_run_reports?select=status,started_at,ar:stage_outcomes->arDrafts&team_id=eq.{pulse_team}&week_end=eq.{yesterday}&order=started_at.desc&limit=1"
+      predicate: |
+        (.q.runs[0] // null) as $r
+        | if $r == null then {verdict: "pending", detail: "no Monday run for week_end \(.yesterday) yet"}
+          elif $r.status == "running" then {verdict: "pending", detail: "run in progress"}
+          elif $r.ar == null then {verdict: "failed", detail: "run \($r.status) with no AR stage outcome"}
+          elif ($r.ar.error // null) != null then {verdict: "failed", detail: "AR stage error: \($r.ar.error)"}
+          else {verdict: "ok", detail: "AR: \(($r.ar.prepared // 0) + ($r.ar.refreshed // 0)) drafts, \(($r.ar.skipped // []) | length) skipped"} end
+    diagnose:
+      notes:
+        - "AR compose: lib/recap/monday-ar-drafts.ts (stage 4 of the Monday handler); drafts in active_recap_drafts"
+
+  - name: monday-ready-email
+    title: Monday ready-for-review email sent
+    enabled: true
+    owner_repo: ~/Projects/Throughline/throughline-app
+    days: [mon]
+    kind: daily
+    window: {start: "05:30", end: "09:30"}
+    retry_end: "09:45"
+    protected: false   # goes only to jim@jimrossrealtor.com
+    quality_rules: null
+    retry: {command: "cd ~/Projects/Throughline/throughline-app && node_modules/.bin/tsx scripts/monday-ready-check.mts", note: "idempotent: sends only when issue + AR are ready and not yet sent"}
+    check:
+      source: throughline
+      queries:
+        runs: "monday_run_reports?select=status,ready_email_sent_at,started_at&team_id=eq.{pulse_team}&week_end=eq.{yesterday}&order=started_at.desc&limit=3"
+      predicate: |
+        ([.q.runs[] | select(.ready_email_sent_at != null)][0] // null) as $s | (.q.runs[0] // null) as $r
+        | if $s != null then {verdict: "ok", detail: "ready email sent \($s.ready_email_sent_at[0:19])Z"}
+          elif $r == null or $r.status == "running" then {verdict: "pending", detail: "Monday run not finished"}
+          else {verdict: "retrying", detail: "run \($r.status), ready email not sent yet"} end
+    diagnose:
+      notes:
+        - "Sender: lib/newsletter/monday-ready-email.ts; standalone: scripts/monday-ready-check.mts [--week] [--dry-run]"
