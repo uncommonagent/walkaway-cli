@@ -235,7 +235,7 @@ jobs:
     protected: false
     quality_rules: null
     # monday-ready (PR #414, 11/16): the Mini fallback reruns the same handler; it treats a `running` row older
-    # than 45 min as dead and exits if the week's issue already exists, so it is safe to run once on FAILED.
+    # past the 09:00 ET cap + 45 min as dead and exits if the week's issue already exists, so it is safe to run once on FAILED.
     retry: {command: "cd ~/Projects/Throughline/throughline-app && node_modules/.bin/tsx scripts/monday-fallback.mts", note: "Mini fallback rerun of the Monday handler (drafts only, nothing sent)"}
     check:
       source: throughline
@@ -246,7 +246,7 @@ jobs:
         (.q.issue[0] // null) as $i | (.q.runs[0] // null) as $r
         | if $i != null and $i.generated_at != null then {verdict: "ok", detail: "issue #\($i.issue_no) week_end \($i.week_end) generated \($i.generated_at[0:19])Z"}
           elif $r == null then {verdict: "pending", detail: "no Monday run for week_end \(.yesterday) yet"}
-          elif $r.status == "running" and (($r.started_at[0:19] + "Z" | fromdateiso8601) < (now - 2700)) then {verdict: "failed", detail: "run stuck in running since \($r.started_at[0:19])Z (>45 min)"}
+          elif $r.status == "running" and (($r.started_at[0:19] + "Z" | fromdateiso8601) < (now - 15300)) then {verdict: "failed", detail: "run stuck in running since \($r.started_at[0:19])Z (>4h15m, past the 09:00 ET cap + 45 min)"}
           elif $r.status == "running" then {verdict: "pending", detail: "run in progress since \($r.started_at[0:19])Z"}
           elif $r.status == "complete" or $r.status == "failed" then {verdict: "failed", detail: "run \($r.status) but no issue for week_end \(.yesterday): \($r.issue_skipped_reason // $r.failure_reason // "no reason")"}
           else {verdict: "retrying", detail: "latest run \($r.status): \($r.gate_blocked_reason // $r.failure_reason // "no reason")"} end
