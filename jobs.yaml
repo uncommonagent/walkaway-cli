@@ -332,3 +332,34 @@ jobs:
     diagnose:
       notes:
         - "Sender: lib/newsletter/monday-ready-email.ts; standalone: scripts/monday-ready-check.mts [--week] [--dry-run]"
+
+  # Added 2026-11-27 (pending-after-merge item): Sunday AR prep (Throughline #416, launchd com.throughline.ar-sunday-prep).
+  - name: ar-sunday-prep
+    title: Sunday AR prep (new actives prepped + summary email)
+    enabled: true
+    owner_repo: ~/Projects/Throughline/throughline-app
+    days: [sun]
+    kind: daily
+    window: {start: "14:00", end: "16:00"}
+    retry_end: "16:00"
+    protected: false   # summary email goes only to Jim; prep writes setup rows, sends nothing to clients
+    quality_rules: null
+    retry: {command: "cd ~/Projects/Throughline/throughline-app && node_modules/.bin/tsx scripts/ar-sunday-prep.mts", note: "reruns the prep; idempotent per listing, re-sends the summary email"}
+    check:
+      logs:
+        prep:
+          path: /tmp/ar-sunday-prep.log
+          grep: '"et_date":"{date}"'
+      predicate: |
+        ((.log.prep | last) // null) as $l
+        | (if $l then ($l | fromjson? // null) else null end) as $r
+        | if $r == null then {verdict: "pending", detail: "no ar-sunday-prep result line for \(.date) yet (launchd fires 14:00 ET)"}
+          elif ($r.error // null) != null then {verdict: "failed", detail: "error: \($r.error)"}
+          elif $r.email_sent != true then {verdict: "failed", detail: "summary email not sent (\($r.items) items)"}
+          else {verdict: "ok", detail: "\($r.items) items, \($r.ready) ready, \($r.need_you) need you; email \($r.resend_id)"} end
+    diagnose:
+      logs:
+        prep_tail: {path: /tmp/ar-sunday-prep.log, grep: "ar-sunday-prep"}
+      notes:
+        - "Script: scripts/ar-sunday-prep.mts (exits 1 on crash or unsent email; launchd ntfys on non-zero); email lib/recap/ar-sunday-prep-email.ts"
+        - "A missing-script ntfy means the shared checkout was off main at 14:00 (see protocol: held merges leave checkout on main)"
